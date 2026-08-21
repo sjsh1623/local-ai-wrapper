@@ -9,7 +9,7 @@ const assets = resolve(dirname(fileURLToPath(import.meta.url)), '../../console')
 const LOGIN_PAGE = `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>알럿 자동조사 콘솔</title>
+<title>Morningmate Issue Solver</title>
 <style>
   /* 콘솔과 같은 Apple 시스템 팔레트. 시트 하나만 있는 화면이라 토큰도 그만큼만. */
   :root{
@@ -57,7 +57,7 @@ const LOGIN_PAGE = `<!doctype html>
         <path d="M13 2 4 14h7l-1 8 9-12h-7z"/>
       </svg>
     </span>
-    <h1>알럿 자동조사 콘솔</h1>
+    <h1>Morningmate Issue Solver</h1>
     <p>API 키를 입력하면 열립니다 · Enter an API key to continue</p>
     <input name="key" type="password" autocomplete="current-password" placeholder="API key" autofocus required>
     <button type="submit">열기 · Open</button>

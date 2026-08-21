@@ -149,7 +149,7 @@
     }
     host.innerHTML = list.map(function (j) {
       return '<button class="row" type="button" data-id="' + esc(j.id) + '" aria-current="' +
-        (j.id === selected) + '">' +
+        (j.id === selected) + '" title="' + esc(webhookSummary(j)) + '">' +
         '<div class="r1"><span class="repo">' + esc(j.repo) + '</span>' +
         '<span class="pill ' + PILL[j.status] + '">' + esc(t(STATUS_LABEL[j.status])) + '</span></div>' +
         '<div class="alert">' + esc(j.context && j.context.alertname ? j.context.alertname : firstLine(j.instruction)) + '</div>' +
@@ -175,7 +175,7 @@
     return 'stage';
   }
 
-  function bubble(kind, time, who, paragraphs, kv) {
+  function bubble(kind, time, who, paragraphs, kv, extra) {
     var kvHtml = kv && kv.length
       ? '<div class="kv">' + kv.map(function (x) {
           return '<span><b>' + esc(x.k) + '</b> ' + esc(x.v) + '</span>'; }).join('') + '</div>'
@@ -183,7 +183,36 @@
     return '<div class="msg ' + kind + '"><div class="t">' + esc(time) + '</div>' +
       '<div class="c"><div class="who">' + esc(who) + '</div><div class="bubble">' +
       paragraphs.map(function (p) { return '<p>' + linkify(esc(p)) + '</p>'; }).join('') +
-      kvHtml + '</div></div></div>';
+      kvHtml + (extra || '') + '</div></div></div>';
+  }
+
+  /**
+   * What arrived, in the order someone asks about it: what fired, how bad, where
+   * from, and where it is being sent. Rendered into a title attribute so it works
+   * inside the scrolling list — a positioned hover card gets clipped by the very
+   * overflow that makes the list scrollable.
+   */
+  function webhookSummary(job) {
+    var c = job.context || {};
+    var lines = [(L === 'ko' ? '수신 웹훅' : 'Inbound webhook') + ' · ' + (c.source || '—')];
+    ['alertname','severity','service','env','deployment.environment','category','team','fingerprint']
+      .forEach(function (k) { if (c[k]) lines.push(k + ': ' + c[k]); });
+    lines.push('repo: ' + job.repo + ' (' + job.base + ')' + (job.dryRun ? ' · dryRun' : ''));
+    if (c.alertUrl) lines.push(c.alertUrl);
+    var first = firstLine(job.instruction);
+    if (first) lines.push('', first);
+    return lines.join('\n');
+  }
+
+  /** The webhook exactly as it arrived, folded away until someone wants it. */
+  function rawBlock(job) {
+    var raw = job.context && job.context._raw;
+    if (!raw) return '';
+    var pretty = raw;
+    try { pretty = JSON.stringify(JSON.parse(raw), null, 2); } catch (e) { /* 원문 그대로 */ }
+    return '<details class="raw"><summary>' +
+      (L === 'ko' ? 'SigNoz 에서 온 원본 웹훅' : 'Raw webhook from SigNoz') +
+      '</summary><pre>' + esc(pretty) + '</pre></details>';
   }
 
   function linkify(html) {
@@ -248,13 +277,13 @@
     // message that came from outside, so the thread opens with it.
     var kv = [];
     Object.keys(job.context || {}).forEach(function (k) {
-      if (k !== 'alertUrl') kv.push({ k: k, v: job.context[k] });
+      if (k !== 'alertUrl' && k.charAt(0) !== '_') kv.push({ k: k, v: job.context[k] });
     });
     if (job.idempotencyKey) kv.push({ k: 'key', v: job.idempotencyKey });
     html += bubble(
       'inbound', clock(job.createdAt),
       L === 'ko' ? '받은 알럿' : 'Alert received',
-      String(job.instruction || '').split('\n\n'), kv
+      String(job.instruction || '').split('\n\n'), kv, rawBlock(job)
     );
 
     thread.events.forEach(function (e) {

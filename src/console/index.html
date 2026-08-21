@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>알럿 자동조사 콘솔</title>
+<title>Morningmate Issue Solver</title>
 <style>
   /* Apple 디자인 언어(HIG)를 그대로 따른다: 시스템 컬러, 3단계 label,
      systemFill, 연속 곡률 느낌의 큰 radius, 재질(material)은 실제로 콘텐츠가
@@ -184,7 +184,7 @@
   @media (max-width:900px){.ops{grid-template-columns:1fr}}
 
   /* ── 사이드바 ─────────────────────────────────────────────── */
-  .joblist{background:var(--bg);display:flex;flex-direction:column;min-width:0;
+  .joblist{background:var(--bg);display:flex;flex-direction:column;min-width:0;min-height:0;
            border-right:1px solid var(--sep)}
   @media (max-width:900px){.joblist{border-right:0;border-bottom:1px solid var(--sep);max-height:38vh}}
   /* 아래로 목록이 실제로 스크롤해 지나가므로 여기의 재질은 진짜다 */
@@ -194,7 +194,7 @@
              border-bottom:1px solid var(--sep)}
   .filters{display:flex;width:100%}
   .filters button{flex:1;padding:5px 6px;white-space:nowrap}
-  .rows{overflow-y:auto;flex:1;padding:6px 8px 12px}
+  .rows{overflow-y:auto;overscroll-behavior:contain;flex:1;min-height:0;padding:6px 8px 12px}
   .row{display:block;width:100%;text-align:left;border:0;border-radius:var(--r-row);
        background:transparent;padding:9px 11px;cursor:pointer;color:inherit;font:inherit;
        transition:background .16s var(--ease)}
@@ -227,7 +227,7 @@
   .mini i.bad{background:var(--red-fill)}
 
   /* ── 상세 ─────────────────────────────────────────────────── */
-  .thread{background:var(--surface);display:flex;flex-direction:column;min-width:0;position:relative}
+  .thread{background:var(--surface);display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
   .thead{padding:16px 20px 14px;display:flex;flex-wrap:wrap;gap:12px;
          align-items:flex-start;justify-content:space-between}
   .thead h2{margin:0;font-size:19px;font-weight:600;letter-spacing:-.022em;line-height:1.25}
@@ -337,6 +337,24 @@
   }
   .nowbar.done .dots{display:none}
 
+  /* ── 원본 웹훅 ────────────────────────────────────────────── */
+  /* 평소에는 접어둔다. 판단 근거로 필요할 때만 펴보는 물건이지,
+     매번 읽을 것이었다면 위의 키/값 줄에 있었을 것이다. */
+  .raw{margin-top:10px;border-top:1px solid var(--island-rule);padding-top:9px}
+  .raw summary{cursor:pointer;font-size:11.5px;color:var(--label-3);
+               list-style:none;display:inline-flex;align-items:center;gap:5px;
+               user-select:none}
+  .raw summary::-webkit-details-marker{display:none}
+  .raw summary::before{content:'';width:0;height:0;border-left:4px solid currentColor;
+                       border-top:3.5px solid transparent;border-bottom:3.5px solid transparent;
+                       transition:transform .15s var(--ease)}
+  .raw[open] summary::before{transform:rotate(90deg)}
+  .raw summary:hover{color:var(--label-2)}
+  .raw pre{margin:9px 0 0;padding:10px 12px;border-radius:8px;background:var(--fill-2);
+           font-family:var(--mono);font-size:11px;line-height:1.55;color:var(--label-2);
+           max-height:320px;overflow:auto;white-space:pre;
+           box-shadow:inset 0 0 0 .5px var(--island-rule)}
+
   /* ── 푸터 ─────────────────────────────────────────────────── */
   .foot{flex:0 0 auto;padding:11px 16px;color:var(--label-3);font-size:11.5px;
         display:flex;flex-wrap:wrap;gap:6px 16px;border-top:1px solid var(--sep);background:var(--bg)}
@@ -356,8 +374,8 @@
           <path d="M13 2 4 14h7l-1 8 9-12h-7z"/>
         </svg>
       </span>
-      <span class="sub"><span class="ko">알럿 자동조사 콘솔</span><span class="en">Alert autofix console</span></span>
-      <span class="app">Branchsmith</span>
+      <span class="sub">Morningmate Issue Solver</span>
+      <span class="app"><span class="ko">SigNoz 알럿 → 조사 → PR</span><span class="en">SigNoz alert → investigate → PR</span></span>
     </div>
     <div class="barright">
       <span class="live"><i></i> <span class="txt"><span class="ko">실시간 연결됨</span><span class="en">Live</span></span></span>

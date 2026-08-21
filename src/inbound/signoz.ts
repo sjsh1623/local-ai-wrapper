@@ -51,7 +51,18 @@ function instructionFrom(alert: SigNozAlert): string {
 
 function contextFrom(alert: SigNozAlert, externalURL?: string): Record<string, string> {
   const ctx: Record<string, string> = { source: 'signoz' };
-  const carry = ['alertname', 'severity', 'service.name', 'deployment.environment'];
+  // These are the labels the alert rules here actually carry, so they are the ones
+  // worth a named slot. Everything else survives in `_raw` below rather than
+  // being dropped — a label nobody anticipated is usually the interesting one.
+  const carry = [
+    'alertname',
+    'severity',
+    'service.name',
+    'deployment.environment',
+    'env',
+    'category',
+    'team',
+  ];
   for (const key of carry) {
     const value = alert.labels[key];
     if (value) ctx[key === 'service.name' ? 'service' : key] = value;
@@ -59,6 +70,13 @@ function contextFrom(alert: SigNozAlert, externalURL?: string): Record<string, s
   if (alert.generatorURL) ctx.alertUrl = alert.generatorURL;
   else if (externalURL) ctx.alertUrl = externalURL;
   if (alert.startsAt) ctx.startsAt = alert.startsAt;
+  if (alert.fingerprint) ctx.fingerprint = alert.fingerprint;
+
+  // The webhook exactly as it arrived. Without it the console can only show what
+  // this function chose to keep, and "why did it decide that" becomes unanswerable
+  // after the fact. Underscore-prefixed so the UI knows to render it apart from
+  // the ordinary key/value fields.
+  ctx._raw = JSON.stringify(alert);
   return ctx;
 }
 
