@@ -10,6 +10,7 @@ import hookRoutes from './api/routes/hooks.js';
 import streamRoutes from './api/routes/stream.js';
 import healthRoutes from './api/routes/health.js';
 import consoleRoutes from './api/routes/console.js';
+import { authDisabled } from './api/auth.js';
 
 const cfg = getConfig();
 
@@ -41,6 +42,13 @@ await app.register(hookRoutes);
 // hook they add cannot leak onto the console or the SigNoz hook.
 await app.register(async (scope) => { await scope.register(jobRoutes); });
 await app.register(async (scope) => { await scope.register(streamRoutes); });
+
+if (authDisabled) {
+  logger.warn(
+    'API_KEYS is empty — console login and the /v1 key check are OFF (internal mode). ' +
+      'The SigNoz hook still requires Basic Auth.',
+  );
+}
 
 loadRoutes();
 

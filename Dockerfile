@@ -32,8 +32,20 @@ RUN npm install -g @anthropic-ai/claude-code && npm cache clean --force
 # refresh depends on. Override with --build-arg on Linux hosts.
 ARG APP_UID=1001
 ARG APP_GID=1001
-RUN groupadd -g ${APP_GID} app 2>/dev/null || true \
- && useradd -m -u ${APP_UID} -g ${APP_GID} -s /bin/bash app 2>/dev/null || true
+# node:22-slim already ships a `node` user at uid/gid 1000, which is exactly the id a
+# Linux host passes in. Adopt whatever already holds the id instead of failing to add a
+# duplicate -- the old `|| true` hid that failure until `USER app` could not resolve.
+RUN set -eu; \
+    if getent group ${APP_GID} >/dev/null; then \
+      g=$(getent group ${APP_GID} | cut -d: -f1); \
+      [ "$g" = app ] || groupmod -n app "$g"; \
+    else groupadd -g ${APP_GID} app; fi; \
+    if getent passwd ${APP_UID} >/dev/null; then \
+      u=$(getent passwd ${APP_UID} | cut -d: -f1); \
+      [ "$u" = app ] || usermod -l app -d /home/app -m -s /bin/bash "$u"; \
+      usermod -g ${APP_GID} app; \
+    else useradd -m -u ${APP_UID} -g ${APP_GID} -s /bin/bash app; fi; \
+    mkdir -p /home/app; chown ${APP_UID}:${APP_GID} /home/app
 
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules

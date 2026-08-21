@@ -22,6 +22,30 @@ export interface AgentOptions {
   onTool?: (activity: ToolActivity, state: StreamState) => void;
 }
 
+/**
+ * Wires the SigNoz MCP server in when one is configured.
+ *
+ * --strict-mcp-config is not optional here. HOME points at the mounted ~/.claude,
+ * so without it Claude Code would also load whatever MCP servers the host user
+ * has registered — personal mail, drive, chat — into an agent that is supposed to
+ * see one observability backend and the checked-out repository.
+ */
+function mcpArgs(): string[] {
+  if (!cfg.SIGNOZ_MCP_URL) return [];
+  const config = JSON.stringify({
+    mcpServers: { signoz: { type: 'http', url: cfg.SIGNOZ_MCP_URL } },
+  });
+  return ['--mcp-config', config, '--strict-mcp-config'];
+}
+
+function allowedTools(): string {
+  // Granting the server by prefix rather than naming ~40 tools, which the SigNoz
+  // server is free to rename between releases. Only added when MCP is actually on.
+  const tools = [...cfg.CLAUDE_ALLOWED_TOOLS];
+  if (cfg.SIGNOZ_MCP_URL) tools.push('mcp__signoz');
+  return tools.join(',');
+}
+
 function claudeArgs(prompt: string): string[] {
   return [
     '--print',
@@ -29,10 +53,11 @@ function claudeArgs(prompt: string): string[] {
     '--output-format',
     'stream-json',
     '--verbose',
+    ...mcpArgs(),
     '--permission-mode',
     cfg.CLAUDE_PERMISSION_MODE,
     '--allowedTools',
-    cfg.CLAUDE_ALLOWED_TOOLS.join(','),
+    allowedTools(),
     // An allow list on its own was observed not to keep Bash out, so the deny
     // list is what actually closes the shell.
     '--disallowedTools',
@@ -59,6 +84,9 @@ function agentEnv(): NodeJS.ProcessEnv {
   delete env.FLOW_API_TOKEN;
   delete env.API_KEYS;
   delete env.SIGNOZ_WEBHOOK_PASS;
+  // The MCP server holds the SigNoz credential and the agent talks to the MCP
+  // server, so the agent itself never needs the key in its environment.
+  delete env.SIGNOZ_API_KEY;
   return env;
 }
 

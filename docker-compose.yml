@@ -29,6 +29,22 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  # Gives the agent read access to the telemetry behind an alert. Deliberately
+  # publishes no port: only branchsmith needs it, over the compose network, and
+  # it holds a SigNoz admin credential that has no business being reachable from
+  # the host. The official image runs HTTP mode only.
+  #
+  # Behind a profile so a box with no SigNoz credentials still comes up with a
+  # plain `docker compose up -d`. To run it:  docker compose --profile signoz up -d
+  signoz-mcp:
+    image: signoz/signoz-mcp-server:latest
+    profiles: ["signoz"]
+    environment:
+      SIGNOZ_URL: ${SIGNOZ_URL:-}
+      SIGNOZ_API_KEY: ${SIGNOZ_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    restart: unless-stopped
+
 volumes:
   repo-cache:
   job-db:

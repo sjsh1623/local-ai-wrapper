@@ -29,7 +29,9 @@ const schema = z.object({
   LOG_LEVEL: z.string().default('info'),
   PORT: int(8080),
 
-  API_KEYS: csv().refine((v) => v.length > 0, 'API_KEYS must list at least one key'),
+  // Empty is meaningful: it turns off the console login and the /v1 key check,
+  // which is the intended shape for an internal-only deployment. See api/auth.ts.
+  API_KEYS: csv(),
 
   SIGNOZ_WEBHOOK_USER: z.string().min(1),
   SIGNOZ_WEBHOOK_PASS: z.string().min(1),
@@ -37,6 +39,11 @@ const schema = z.object({
   SIGNOZ_SEVERITIES: csv(['critical', 'error']),
   SIGNOZ_ON_RESOLVED: z.enum(['ignore', 'cancel']).default('ignore'),
   ROUTES_FILE: z.string().default('./routes.yml'),
+
+  // The inbound webhook above tells us an alert fired; this is the outbound side
+  // that lets the agent go read the logs and traces behind it. Empty disables it,
+  // so the agent simply works without SigNoz context rather than failing.
+  SIGNOZ_MCP_URL: z.string().default(''),
 
   GITHUB_TOKEN: z.string().min(1),
   GITHUB_API_URL: z.string().default('https://api.github.com'),

@@ -27,13 +27,22 @@ export function apiKeyOf(req: FastifyRequest): string | null {
   return null;
 }
 
+/**
+ * No keys configured means this is an internal-only deployment that wants no
+ * login at all. The SigNoz hook is unaffected — it authenticates with Basic
+ * Auth below, so inbound alerts stay guarded either way.
+ */
+export const authDisabled = cfg.API_KEYS.length === 0;
+
 export function hasValidKey(req: FastifyRequest): boolean {
+  if (authDisabled) return true;
   const key = apiKeyOf(req);
   return key !== null && constantTimeIncludes(key, cfg.API_KEYS);
 }
 
 /** Guard for every /v1 route except the SigNoz hook, which uses Basic Auth. */
 export async function requireApiKey(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (authDisabled) return;
   if (hasValidKey(req)) return;
   await reply.code(401).send({ error: t(cfg.LOCALE, 'error.unauthorized') });
 }
