@@ -63,6 +63,26 @@ function contextFrom(alert: SigNozAlert, externalURL?: string): Record<string, s
 }
 
 /**
+ * A connectivity probe wearing an incident's clothes.
+ *
+ * SigNoz's "send test notification" button posts a normal Alertmanager batch, so
+ * without this it lands as a real defect report: the agent clones the repository
+ * and burns a turn on nothing. With JOB_CONCURRENCY=1 it also parks the next real
+ * alert behind it. Cheaper to name it than to run it.
+ *
+ * The two SigNoz markers are its literals, observed on the wire — alertname
+ * "Test Alert (<channel>)" and that exact summary. `test=true` is for anyone
+ * hand-rolling a payload with curl.
+ */
+function isTest(alert: SigNozAlert): boolean {
+  if (alert.labels.test === 'true') return true;
+  return (
+    (alert.labels.alertname ?? '').startsWith('Test Alert') ||
+    (alert.annotations.summary ?? '') === 'Test alert fired from SigNoz'
+  );
+}
+
+/**
  * Decide what one alert means. The gate is deliberately closed by default: an
  * alert without an explicit opt-in — a label or a routes.yml entry — is skipped.
  */
@@ -75,6 +95,12 @@ export function decide(alert: SigNozAlert, payload: SigNozPayload): Decision {
     return cfg.SIGNOZ_ON_RESOLVED === 'cancel'
       ? { action: 'cancel', fingerprint }
       : { action: 'skip', reason: 'resolved', fingerprint };
+  }
+
+  // Before the opt-in gate on purpose: a test must be named a test whether or not
+  // it would have matched a route, otherwise the catch-all swallows the distinction.
+  if (isTest(alert)) {
+    return { action: 'skip', reason: 'test alert, not a real incident', fingerprint };
   }
 
   const route = matchRoute(labels);
