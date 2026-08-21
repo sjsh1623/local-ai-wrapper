@@ -104,6 +104,13 @@ export function decide(alert: SigNozAlert, payload: SigNozPayload): Decision {
   }
 
   const route = matchRoute(labels);
+
+  // An explicit "not this one" beats the opt-in label too. Otherwise a rule you
+  // deliberately excluded here would come back the moment someone labels it.
+  if (route?.skip) {
+    return { action: 'skip', reason: 'routes.yml marks this alert as no-action', fingerprint };
+  }
+
   const optedIn = labels[cfg.SIGNOZ_REQUIRE_LABEL] === 'true';
   if (!optedIn && !route) {
     return {
