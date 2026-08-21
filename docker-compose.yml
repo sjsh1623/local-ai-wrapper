@@ -21,6 +21,9 @@ services:
       - repo-cache:/data/cache
       - job-db:/data/db
       - ./routes.yml:/app/routes.yml:ro
+      # Read-only on purpose: git only ever reads from here, and a manually
+      # curated checkout should not be something a job can damage.
+      - ./repo:/data/repo:ro
     healthcheck:
       test: ["CMD", "node", "dist/healthcheck.js"]
       interval: 30s

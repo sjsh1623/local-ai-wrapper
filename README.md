@@ -297,6 +297,7 @@ The ones that matter most:
 | `CLAUDE_MODEL` | `claude-opus-5` | |
 | `CLAUDE_DISALLOWED_TOOLS` | `Bash,WebFetch,WebSearch,Task` | What keeps the agent out of a shell |
 | `JOB_CONCURRENCY` | `1` | Raise only if you understand the credential contention |
+| `REPOS_DIR` | `./repo` | Repositories placed here by hand are read instead of cloning |
 | `KEEP_WORKSPACE` | `false` | Keep a failed job's worktree for debugging |
 
 ---
@@ -332,7 +333,7 @@ src/
   inbound/           signoz.ts (adapter) · routes.ts (routes.yml)
   api/               auth.ts · routes/{jobs,hooks,stream,health,console}.ts
   jobs/              store.ts (SQLite) · queue.ts · lifecycle.ts (the nine stages)
-  workspace/         mirror.ts (bare cache) · worktree.ts
+  workspace/         mirror.ts (bare cache, REPOS_DIR aware) · worktree.ts
   agent/             claude.ts (headless spawn) · stream.ts (NDJSON) · prompt.ts
   git/               credentials.ts · identity.ts · commit.ts · push.ts
   forge/             github.ts (Octokit)

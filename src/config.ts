@@ -66,6 +66,9 @@ const schema = z.object({
   VERIFY_TIMEOUT_MS: int(600_000),
   WORKSPACE_DIR: z.string().default('./data/work'),
   CACHE_DIR: z.string().default('./data/cache'),
+  // Repositories dropped in here by hand are used instead of cloning from GitHub.
+  // Nothing has to be placed here; an empty directory just means "always clone".
+  REPOS_DIR: z.string().default('./repo'),
   DB_PATH: z.string().default('./data/db/branchsmith.db'),
   KEEP_WORKSPACE: bool(false),
 
@@ -87,6 +90,7 @@ const schema = z.object({
 export type Config = z.infer<typeof schema> & {
   workspaceDir: string;
   cacheDir: string;
+  reposDir: string;
   dbPath: string;
   routesFile: string;
 };
@@ -104,6 +108,7 @@ function build(): Config {
     ...c,
     workspaceDir: resolve(c.WORKSPACE_DIR),
     cacheDir: resolve(c.CACHE_DIR),
+    reposDir: resolve(c.REPOS_DIR),
     dbPath: resolve(c.DB_PATH),
     routesFile: resolve(c.ROUTES_FILE),
   };

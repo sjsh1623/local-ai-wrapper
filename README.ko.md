@@ -294,6 +294,7 @@ curl -X POST localhost:8080/v1/jobs \
 | `CLAUDE_MODEL` | `claude-opus-5` | |
 | `CLAUDE_DISALLOWED_TOOLS` | `Bash,WebFetch,WebSearch,Task` | 에이전트를 셸에서 떼어 놓는 장치 |
 | `JOB_CONCURRENCY` | `1` | 자격 증명 경합을 이해한 뒤에만 올리세요 |
+| `REPOS_DIR` | `./repo` | 여기에 직접 넣어둔 저장소는 clone 하지 않고 읽는다 |
 | `KEEP_WORKSPACE` | `false` | 실패한 작업의 worktree 를 남겨 디버깅 |
 
 ---

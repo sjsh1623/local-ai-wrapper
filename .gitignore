@@ -8,3 +8,7 @@ data/
 .idea/
 .vscode/
 .DS_Store
+
+# 수동 배치 저장소 — 내용물은 추적하지 않는다
+repo/*
+!repo/.gitkeep

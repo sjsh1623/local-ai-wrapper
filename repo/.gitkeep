@@ -1,0 +1,9 @@
+여기에 대상 저장소를 직접 넣어두면 GitHub 에서 clone 하지 않고 그것을 쓴다.
+
+  repo/flow-was                     또는   repo/madrascheck-dev/flow-was
+  repo/authentication                      repo/madrascheck-dev/authentication
+
+읽기만 한다. 커밋된 이력만 넘어가고, 그 체크아웃의 커밋되지 않은 수정은 보이지
+않는다. 브랜치를 따고 PR 을 여는 것은 언제나 GitHub 쪽이다 (git/push.ts).
+
+비어 있어도 된다 — 없는 저장소는 평소대로 clone 한다.
