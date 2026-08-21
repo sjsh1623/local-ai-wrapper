@@ -1,29 +1,81 @@
-# Fallback routing for SigNoz alerts that cannot carry `autofix` / `repo` labels.
+# SigNoz 알럿 → 대상 저장소 매핑.
 #
-# Labels on the alert rule always win.  This file is only consulted when a
-# matching label is absent.  An alert that matches nothing here AND carries no
-# labels is ignored — that is the intended default.
+# 알럿 룰의 라벨이 항상 우선이고, 이 파일은 라벨이 없을 때 채워 넣는다.
+# 현재 SigNoz 알럿 룰 25개는 category/env/severity/team 만 달고 있어 repo 를 전혀
+# 모르므로, 실질적으로 라우팅은 전부 이 파일이 결정한다.
 #
-# 알럿 룰의 라벨이 항상 우선입니다. 이 파일은 라벨이 없을 때만 참조되고,
-# 둘 다 없으면 그 알럿은 무시됩니다.
+# match 는 완전 일치다(와일드카드 없음). 그래서 서비스마다 한 줄씩 적는다.
+# 매칭은 위에서부터 첫 일치이므로 catch-all 은 반드시 맨 아래에 둔다.
+#
+# dryRun: true 는 "고쳐보고 diff 만 보고하고 push/PR 은 하지 않는다"는 뜻이다.
+# 실제로 PR 을 열 준비가 된 라우트만 하나씩 false 로 내려라.
 
 routes:
-  - match:
-      alertname: WebhookDeliveryFailureRate
-    repo: sjsh1623/morningmate-api
-    base: develop
-    verify:
-      - npm ci
-      - npm test
-    pr:
-      draft: true
-      labels: [autofix]
-      reviewers: [sjsh1623]
+  # ── Java WAS (톰캣) ────────────────────────────────────────────
+  # 운영 6대 + 릴리즈 1대가 같은 코드베이스를 돌린다. 서비스명이 지역/번호로만
+  # 갈리므로 전부 같은 레포로 모은다. (서비스명의 'prodction' 오타는 SigNoz 쪽
+  # 실제 값이라 그대로 적어야 매칭된다.)
+  - match: { service.name: tokyo-tomcat-prodction-1 }
+    repo: madrascheck-dev/flow-was
+    base: saas/develop
+    dryRun: true
+  - match: { service.name: tokyo-tomcat-prodction-2 }
+    repo: madrascheck-dev/flow-was
+    base: saas/develop
+    dryRun: true
+  - match: { service.name: london-tomcat-prodction-1 }
+    repo: madrascheck-dev/flow-was
+    base: saas/develop
+    dryRun: true
+  - match: { service.name: london-tomcat-prodction-2 }
+    repo: madrascheck-dev/flow-was
+    base: saas/develop
+    dryRun: true
+  - match: { service.name: ohio-tomcat-prodction-1 }
+    repo: madrascheck-dev/flow-was
+    base: saas/develop
+    dryRun: true
+  - match: { service.name: ohio-tomcat-prodction-2 }
+    repo: madrascheck-dev/flow-was
+    base: saas/develop
+    dryRun: true
+  - match: { service.name: flow-was-tokyo-release }
+    repo: madrascheck-dev/flow-was
+    base: saas/develop
+    dryRun: true
 
-  - match:
-      service.name: morningmate-web
-    repo: sjsh1623/morningmate-web
-    base: main
-    verify:
-      - npm ci
-      - npm test
+  # ── 인증 서버 ─────────────────────────────────────────────────
+  - match: { service.name: tokyo-authentication-production }
+    repo: madrascheck-dev/authentication
+    base: master
+    dryRun: true
+  - match: { service.name: tokyo-authentication-release }
+    repo: madrascheck-dev/authentication
+    base: master
+    dryRun: true
+  - match: { service.name: london-authentication-release }
+    repo: madrascheck-dev/authentication
+    base: master
+    dryRun: true
+
+  # ── 빌링 / 결제 ───────────────────────────────────────────────
+  - match: { service.name: tokyo-billing-production }
+    repo: madrascheck-dev/morningmate-payment
+    base: master
+    dryRun: true
+  - match: { service.name: tokyo-payment-release }
+    repo: madrascheck-dev/morningmate-payment
+    base: master
+    dryRun: true
+
+  # ── catch-all ─────────────────────────────────────────────────
+  # 빈 match 는 모든 알럿에 걸린다(빈 조건의 every 는 true).
+  # 이 줄이 있어야 "SigNoz 에서 오는 모든 알럿을 받는다"가 성립한다. 없으면
+  # service.name 이 없는 알럿(호스트 메모리·디스크 등)은 조용히 버려진다.
+  #
+  # 다만 그런 알럿은 코드로 고칠 대상이 아니다. 목적지 레포는 "일단 조사해볼
+  # 곳"에 가깝고, 그래서 dryRun 을 절대 풀지 말 것.
+  - match: {}
+    repo: madrascheck-dev/flow-was
+    base: saas/develop
+    dryRun: true

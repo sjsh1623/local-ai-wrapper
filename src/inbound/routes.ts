@@ -5,9 +5,14 @@ import { getConfig } from '../config.js';
 import { logger } from '../logger.js';
 
 const routeSchema = z.object({
+  // An empty `match` matches every alert — `every` over no entries is true. That is
+  // the catch-all, and it only behaves as one when it is the last route in the file.
   match: z.record(z.string()),
   repo: z.string(),
   base: z.string().optional(),
+  // Lets a route stay in report-only mode without touching every alert rule's labels.
+  // A rule that carries no labels at all is exactly the case routes.yml exists for.
+  dryRun: z.boolean().default(false),
   verify: z.array(z.string()).default([]),
   pr: z
     .object({

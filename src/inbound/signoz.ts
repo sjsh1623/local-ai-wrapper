@@ -114,7 +114,9 @@ export function decide(alert: SigNozAlert, payload: SigNozPayload): Decision {
     },
     notify: { kind: 'flow', postId: labels.flowPostId ?? null },
     locale,
-    dryRun: labels.dryRun === 'true',
+    // Label wins per field, as everywhere else; the route only fills the gap. An
+    // alert rule that says nothing about dryRun inherits its route's setting.
+    dryRun: labels.dryRun !== undefined ? labels.dryRun === 'true' : (route?.dryRun ?? false),
     idempotencyKey: `signoz:${fingerprint}`,
   };
 
