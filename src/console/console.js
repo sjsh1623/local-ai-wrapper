@@ -25,6 +25,19 @@
   var PILL = { running:'running', queued:'queued', failed:'failed', timed_out:'failed',
                cancelled:'failed', succeeded:'succeeded', no_changes:'succeeded' };
 
+  /* SF Symbols 를 쓸 수 없으니 같은 규칙(둥근 캡, 1.9 스트로크)으로 직접 그린다. */
+  var GLYPH = {
+    run:   '<path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4.2v4.2h-4.2"/>',
+    queue: '<circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.1 1.9"/>',
+    done:  '<circle cx="12" cy="12" r="8.4"/><path d="M8.2 12.3l2.6 2.6 5-5.5"/>',
+    fail:  '<path d="M12 4.4 2.8 19.6h18.4z"/><path d="M12 10v4.3"/><path d="M12 17.3h.01"/>'
+  };
+  function icon(name, size, cls) {
+    return '<svg class="' + (cls || '') + '" width="' + size + '" height="' + size + '" ' +
+      'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + GLYPH[name] + '</svg>';
+  }
+
   function t(o) { return o ? (o[L] || o.en) : ''; }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
@@ -71,13 +84,14 @@
 
   function renderStats() {
     var tiles = [
-      { cls:'run',  lbl:{ko:'실행 중',en:'Running'},    val:stats.running },
-      { cls:'',     lbl:{ko:'대기',en:'Queued'},        val:stats.queued },
-      { cls:'',     lbl:{ko:'오늘 완료',en:'Done today'},  val:stats.done },
-      { cls:'fail', lbl:{ko:'오늘 실패',en:'Failed today'},val:stats.failed }
+      { cls:'run',   ico:'run',   lbl:{ko:'실행 중',en:'Running'},        val:stats.running },
+      { cls:'queue', ico:'queue', lbl:{ko:'대기',en:'Queued'},            val:stats.queued },
+      { cls:'done',  ico:'done',  lbl:{ko:'오늘 완료',en:'Done today'},   val:stats.done },
+      { cls:'fail',  ico:'fail',  lbl:{ko:'오늘 실패',en:'Failed today'}, val:stats.failed }
     ];
     document.getElementById('stats').innerHTML = tiles.map(function (s) {
-      return '<div class="stat ' + s.cls + '"><span class="lbl">' + esc(t(s.lbl)) +
+      return '<div class="stat ' + s.cls + '">' + icon(s.ico, 16, 'ico') +
+             '<span class="lbl">' + esc(t(s.lbl)) +
              '</span><span class="val">' + s.val + '</span></div>';
     }).join('');
   }
@@ -102,7 +116,7 @@
     ];
     document.getElementById('filters').innerHTML = defs.map(function (d) {
       return '<button type="button" data-f="' + d.f + '" aria-pressed="' + (d.f === filter) +
-             '">' + esc(t(d.lbl)) + ' ' + d.n + '</button>';
+             '">' + esc(t(d.lbl)) + '<span class="n">' + d.n + '</span></button>';
     }).join('');
     document.querySelectorAll('#filters button').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -127,8 +141,10 @@
     var host = document.getElementById('rows');
     var list = visibleJobs();
     if (!list.length) {
-      host.innerHTML = '<div style="padding:20px 14px;color:var(--muted);font-size:.85rem">' +
-        (L === 'ko' ? '표시할 작업이 없습니다.' : 'No jobs to show.') + '</div>';
+      host.innerHTML = '<div class="empty"><b>' +
+        (L === 'ko' ? '표시할 작업이 없습니다' : 'No jobs here') + '</b>' +
+        (L === 'ko' ? '알럿이 들어오면 이 목록에 바로 나타납니다.'
+                    : 'Alerts show up here the moment they arrive.') + '</div>';
       return;
     }
     host.innerHTML = list.map(function (j) {
@@ -182,8 +198,13 @@
     if (!job) {
       head.textContent = L === 'ko' ? '작업을 선택하세요' : 'Select a job';
       document.getElementById('t-meta').innerHTML = '';
-      document.getElementById('t-step').innerHTML = '';
-      document.getElementById('t-msgs').innerHTML = '';
+      var idle = document.getElementById('t-step');
+      idle.className = 'island';
+      idle.innerHTML = '';
+      document.getElementById('t-msgs').innerHTML = '<div class="empty"><b>' +
+        (L === 'ko' ? '선택된 작업이 없습니다' : 'Nothing selected') + '</b>' +
+        (L === 'ko' ? '왼쪽 목록에서 작업을 고르면 진행 단계와 로그가 여기에 흐릅니다.'
+                    : 'Pick a job on the left to follow its stages and log here.') + '</div>';
       document.getElementById('t-now').innerHTML = '';
       return;
     }
@@ -202,11 +223,24 @@
     var cancel = document.getElementById('t-cancel');
     cancel.disabled = isTerminal(job);
 
+    // 진행 중인 작업 하나를 다이내믹 아일랜드처럼 띄운다: 지금 어느 단계인지,
+    // 몇 번째인지, 얼마나 걸리고 있는지가 한 캡슐 안에 모두 들어간다.
     var idx = STAGES.indexOf(job.stage) + 1;
-    document.getElementById('t-step').innerHTML = segs(job) + '<span class="lab">' +
-      (job.status === 'queued'
-        ? (L === 'ko' ? '대기 중' : 'waiting')
-        : idx + '/9 · ' + esc(t(STAGE_LABEL[job.stage]))) + '</span>';
+    var running = job.status === 'running';
+    var ok = job.status === 'succeeded' || job.status === 'no_changes';
+    var bad = isTerminal(job) && !ok;
+    var island = document.getElementById('t-step');
+    island.className = 'island' + (running ? ' live' : ok ? ' ok' : bad ? ' bad' : '');
+    island.innerHTML =
+      '<span class="ibadge">' +
+        icon(running ? 'run' : ok ? 'done' : bad ? 'fail' : 'queue', 20) + '</span>' +
+      '<div class="imain"><div class="itop">' +
+        '<span class="istage">' + esc(job.status === 'queued'
+          ? (L === 'ko' ? '큐에서 대기 중' : 'Waiting in queue')
+          : t(STAGE_LABEL[job.stage])) + '</span>' +
+        (job.status === 'queued' ? '' : '<span class="icount">' + idx + ' / 9</span>') +
+        '<span class="el" data-id="' + esc(job.id) + '">' + fmt(elapsedOf(job)) + '</span>' +
+      '</div><div class="irail">' + segs(job) + '</div></div>';
 
     var html = '';
 
@@ -327,7 +361,7 @@
     });
     source.addEventListener('error', function () {
       // EventSource reconnects on its own; surface the gap rather than hide it.
-      if (dot) dot.style.color = 'var(--crit)';
+      if (dot) dot.style.color = 'var(--red)';
     });
   }
 
