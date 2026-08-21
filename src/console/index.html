@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Branchsmith Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  :root{
+    --ground:#E6EBE9; --surface:#F6F9F7; --surface-2:#DCE4E1; --sunk:#CFDAD6;
+    --ink:#0E1D1C; --ink-2:#374A47; --muted:#63756F;
+    --rule:#C3D0CC; --rule-soft:#D6E0DC;
+    --accent:#0D6870; --accent-2:#0A4F56; --accent-soft:#CFE3E3;
+    --brass:#8A6015; --brass-soft:#EBDFC3;
+    --ok:#2A6A4C; --ok-soft:#CFE5D8;
+    --warn:#856410; --warn-soft:#F0E3C2;
+    --crit:#973026; --crit-soft:#F2D7D3;
+    --code-bg:#0C1A19; --code-ink:#D5E4DF; --code-dim:#7E9691;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#08110F; --surface:#0F1B1A; --surface-2:#162523; --sunk:#111E1D;
+      --ink:#E1EDE9; --ink-2:#B2C4C0; --muted:#849A95;
+      --rule:#213734; --rule-soft:#1A2C2A;
+      --accent:#54BFC4; --accent-2:#7FD6D9; --accent-soft:#10312F;
+      --brass:#D2A44E; --brass-soft:#2C2416;
+      --ok:#5EBE8B; --ok-soft:#102A1F;
+      --warn:#D4B25A; --warn-soft:#2A2312;
+      --crit:#E0776B; --crit-soft:#2E1815;
+      --code-bg:#050D0C; --code-ink:#CDDFDA; --code-dim:#6C8580;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#08110F; --surface:#0F1B1A; --surface-2:#162523; --sunk:#111E1D;
+    --ink:#E1EDE9; --ink-2:#B2C4C0; --muted:#849A95;
+    --rule:#213734; --rule-soft:#1A2C2A;
+    --accent:#54BFC4; --accent-2:#7FD6D9; --accent-soft:#10312F;
+    --brass:#D2A44E; --brass-soft:#2C2416;
+    --ok:#5EBE8B; --ok-soft:#102A1F;
+    --warn:#D4B25A; --warn-soft:#2A2312;
+    --crit:#E0776B; --crit-soft:#2E1815;
+    --code-bg:#050D0C; --code-ink:#CDDFDA; --code-dim:#6C8580;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--ground);color:var(--ink);
+    font-family:Archivo,"Helvetica Neue",Arial,sans-serif;
+    font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+  .lang-ko .en{display:none}
+  .lang-en .ko{display:none}
+
+  #app{max-width:1280px;margin-inline:auto;padding:0 20px 40px}
+
+  /* ---- top bar ---- */
+  .bar{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;
+       padding:18px 0 16px;border-bottom:1px solid var(--rule)}
+  .mark{display:flex;align-items:baseline;gap:11px}
+  .mark .name{font-size:1.06rem;font-weight:700;letter-spacing:-.02em}
+  .mark .name span{color:var(--accent)}
+  .mark .sub{font-family:"JetBrains Mono",monospace;font-size:.64rem;letter-spacing:.15em;
+             text-transform:uppercase;color:var(--muted)}
+  .barright{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .live{display:inline-flex;align-items:center;gap:7px;font-family:"JetBrains Mono",monospace;
+        font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ok)}
+  .live i{width:7px;height:7px;border-radius:50%;background:var(--ok);display:block}
+  @media (prefers-reduced-motion:no-preference){
+    .live i{animation:pulse 2s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.8)}}
+  }
+  .langswitch{display:inline-flex;border:1px solid var(--rule);border-radius:2px;overflow:hidden;background:var(--surface)}
+  .langswitch button{font-family:"JetBrains Mono",monospace;font-size:.65rem;letter-spacing:.1em;
+    text-transform:uppercase;padding:6px 11px;border:0;background:transparent;color:var(--muted);cursor:pointer}
+  .langswitch button[aria-pressed="true"]{background:var(--accent);color:var(--ground)}
+  .langswitch button:focus-visible{outline:2px solid var(--brass);outline-offset:-2px}
+
+  /* ---- stat row ---- */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+         background:var(--rule);border:1px solid var(--rule);margin-top:18px}
+  .stat{background:var(--surface);padding:13px 15px 14px;display:flex;flex-direction:column;gap:5px}
+  .stat .lbl{font-family:"JetBrains Mono",monospace;font-size:.62rem;letter-spacing:.14em;
+             text-transform:uppercase;color:var(--muted)}
+  .stat .val{font-size:1.75rem;font-weight:700;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+  .stat.run .val{color:var(--accent)}
+  .stat.fail .val{color:var(--crit)}
+  .stat .note{font-family:"JetBrains Mono",monospace;font-size:.65rem;color:var(--muted)}
+  .strip{display:flex;gap:2px;align-items:flex-end;height:26px;margin-top:2px}
+  .strip span{flex:1;background:var(--accent-soft);min-height:3px;border-radius:1px}
+  .strip span.f{background:var(--crit-soft)}
+  .strip span.a{background:var(--accent)}
+
+  /* ---- ops layout ---- */
+  .ops{display:grid;grid-template-columns:340px minmax(0,1fr);gap:1px;background:var(--rule);
+       border:1px solid var(--rule);border-top:0;min-height:560px}
+  @media (max-width:900px){.ops{grid-template-columns:1fr}}
+
+  /* ---- job list ---- */
+  .joblist{background:var(--surface);display:flex;flex-direction:column;min-width:0}
+  .filters{display:flex;gap:6px;padding:11px 13px;border-bottom:1px solid var(--rule-soft);flex-wrap:wrap}
+  .filters button{font-family:"JetBrains Mono",monospace;font-size:.64rem;letter-spacing:.06em;
+    padding:4px 9px;border:1px solid var(--rule);background:transparent;color:var(--muted);
+    cursor:pointer;border-radius:2px}
+  .filters button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .filters button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .rows{overflow-y:auto;flex:1}
+  .row{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--rule-soft);
+       background:transparent;padding:12px 13px;cursor:pointer;color:inherit;font:inherit;position:relative}
+  .row::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:transparent}
+  .row:hover{background:var(--sunk)}
+  .row[aria-current="true"]{background:var(--sunk)}
+  .row[aria-current="true"]::before{background:var(--accent)}
+  .row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .row .r1{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .row .repo{font-family:"JetBrains Mono",monospace;font-size:.72rem;color:var(--ink-2);
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .alert{font-weight:600;font-size:.92rem;letter-spacing:-.01em;margin-top:3px;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .r3{display:flex;align-items:center;gap:8px;margin-top:8px}
+  .row .el{font-family:"JetBrains Mono",monospace;font-size:.66rem;color:var(--muted);
+           margin-left:auto;font-variant-numeric:tabular-nums}
+  .pill{font-family:"JetBrains Mono",monospace;font-size:.62rem;letter-spacing:.06em;
+        padding:2px 7px;border-radius:2px;white-space:nowrap;border:1px solid transparent}
+  .pill.running{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+  .pill.queued{background:var(--surface-2);color:var(--muted);border-color:var(--rule)}
+  .pill.failed{background:var(--crit-soft);color:var(--crit);border-color:var(--crit)}
+  .pill.succeeded{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
+  .mini{display:flex;gap:2px;flex:1;max-width:110px}
+  .mini i{height:4px;flex:1;background:var(--rule);border-radius:1px}
+  .mini i.on{background:var(--accent)}
+  .mini i.cur{background:var(--accent-2)}
+  .mini i.bad{background:var(--crit)}
+
+  /* ---- thread ---- */
+  .thread{background:var(--surface);display:flex;flex-direction:column;min-width:0}
+  .thead{padding:14px 18px;border-bottom:1px solid var(--rule-soft);display:flex;
+         flex-wrap:wrap;gap:12px;align-items:flex-start;justify-content:space-between}
+  .thead h2{margin:0;font-size:1.02rem;font-weight:600;letter-spacing:-.015em}
+  .thead .meta{font-family:"JetBrains Mono",monospace;font-size:.68rem;color:var(--muted);margin-top:5px;
+               display:flex;flex-wrap:wrap;gap:5px 12px}
+  .thead .meta b{color:var(--ink-2);font-weight:500}
+  .cancel{font-family:"JetBrains Mono",monospace;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;
+          padding:6px 11px;border:1px solid var(--crit);color:var(--crit);background:transparent;
+          border-radius:2px;cursor:pointer}
+  .cancel:hover{background:var(--crit-soft)}
+  .cancel:focus-visible{outline:2px solid var(--crit);outline-offset:1px}
+  .cancel[disabled]{opacity:.35;cursor:not-allowed}
+
+  .stepper{display:flex;gap:3px;padding:11px 18px;border-bottom:1px solid var(--rule-soft);align-items:center}
+  .stepper i{height:5px;flex:1;background:var(--rule);border-radius:1px;position:relative}
+  .stepper i.on{background:var(--accent)}
+  .stepper i.cur{background:var(--accent-2)}
+  .stepper i.bad{background:var(--crit)}
+  .stepper .lab{font-family:"JetBrains Mono",monospace;font-size:.64rem;color:var(--muted);
+                margin-left:10px;white-space:nowrap;flex:0 0 auto;font-variant-numeric:tabular-nums}
+
+  .msgs{padding:18px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:14px;max-height:520px}
+
+  .msg{display:grid;grid-template-columns:64px minmax(0,1fr);gap:12px}
+  .msg .t{font-family:"JetBrains Mono",monospace;font-size:.65rem;color:var(--muted);
+          padding-top:3px;font-variant-numeric:tabular-nums}
+  .msg .c{min-width:0}
+  .who{font-family:"JetBrains Mono",monospace;font-size:.62rem;letter-spacing:.13em;
+       text-transform:uppercase;margin-bottom:5px;display:flex;align-items:center;gap:7px}
+  .bubble{border:1px solid var(--rule);background:var(--surface-2);padding:11px 13px;border-radius:2px}
+  .bubble p{margin:0;font-size:.91rem;color:var(--ink)}
+  .bubble p + p{margin-top:6px}
+  .bubble .kv{font-family:"JetBrains Mono",monospace;font-size:.7rem;color:var(--muted);
+              margin-top:8px;display:flex;flex-wrap:wrap;gap:4px 14px}
+  .bubble .kv b{color:var(--ink-2);font-weight:500}
+
+  .msg.inbound .who{color:var(--brass)}
+  .msg.inbound .bubble{background:var(--brass-soft);border-color:var(--brass)}
+  .msg.stage .who{color:var(--accent)}
+  .msg.stage .bubble{background:transparent;border-color:var(--rule-soft)}
+  .msg.tool .who{color:var(--muted)}
+  .msg.tool .bubble{background:var(--code-bg);border-color:var(--rule);color:var(--code-ink);
+                    font-family:"JetBrains Mono",monospace;font-size:.76rem;line-height:1.7}
+  .msg.tool .bubble p{color:var(--code-ink);font-family:inherit;font-size:inherit}
+  .msg.tool .bubble .dim{color:var(--code-dim)}
+  .msg.notify .who{color:var(--muted)}
+  .msg.notify .bubble{background:transparent;border:0;border-left:2px solid var(--rule);
+                      padding:2px 0 2px 11px;border-radius:0}
+  .msg.notify .bubble p{font-size:.83rem;color:var(--muted)}
+  .msg.result .who{color:var(--ok)}
+  .msg.result .bubble{background:var(--ok-soft);border-color:var(--ok)}
+  .msg.error .who{color:var(--crit)}
+  .msg.error .bubble{background:var(--crit-soft);border-color:var(--crit)}
+
+  .bubble a{color:var(--accent);text-underline-offset:2px}
+  .tagf{font-family:"JetBrains Mono",monospace;font-size:.72rem;background:var(--sunk);
+        padding:1px 5px;border-radius:2px;color:var(--ink-2)}
+
+  .nowbar{border-top:1px solid var(--rule-soft);padding:12px 18px;display:flex;align-items:center;
+          gap:10px;font-family:"JetBrains Mono",monospace;font-size:.7rem;color:var(--muted)}
+  .dots{display:inline-flex;gap:3px}
+  .dots i{width:4px;height:4px;border-radius:50%;background:var(--accent);display:block}
+  @media (prefers-reduced-motion:no-preference){
+    .dots i{animation:bob 1.2s ease-in-out infinite}
+    .dots i:nth-child(2){animation-delay:.15s}
+    .dots i:nth-child(3){animation-delay:.3s}
+    @keyframes bob{0%,100%{opacity:.25}50%{opacity:1}}
+  }
+  .nowbar.done .dots{display:none}
+
+  .foot{margin-top:20px;color:var(--muted);font-family:"JetBrains Mono",monospace;
+        font-size:.66rem;letter-spacing:.05em;display:flex;flex-wrap:wrap;gap:6px 18px}
+  .foot b{color:var(--ink-2);font-weight:500}
+</style>
+</head>
+<body>
+<div id="app" class="lang-ko">
+
+  <div class="bar">
+    <div class="mark">
+      <span class="name">Branchsmith<span>.</span></span>
+      <span class="sub"><span class="ko">진행 콘솔</span><span class="en">console</span></span>
+    </div>
+    <div class="barright">
+      <span class="live"><i></i> SSE <span class="ko">연결됨</span><span class="en">connected</span></span>
+      <div class="langswitch" role="group" aria-label="Language">
+        <button type="button" data-lang="ko" aria-pressed="true">한국어</button>
+        <button type="button" data-lang="en" aria-pressed="false">English</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="ops">
+    <aside class="joblist" aria-label="Jobs">
+      <div class="filters" role="group" id="filters"></div>
+      <div class="rows" id="rows"></div>
+    </aside>
+
+    <section class="thread" aria-live="polite">
+      <div class="thead">
+        <div>
+          <h2 id="t-alert">—</h2>
+          <div class="meta" id="t-meta"></div>
+        </div>
+        <button class="cancel" id="t-cancel" type="button"><span class="ko">작업 취소</span><span class="en">Cancel job</span></button>
+      </div>
+      <div class="stepper" id="t-step"></div>
+      <div class="msgs" id="t-msgs"></div>
+      <div class="nowbar" id="t-now"></div>
+    </section>
+  </div>
+
+  <div class="foot">
+    <span><b>GET /</b> <span class="ko">읽기 전용 콘솔</span><span class="en">read-only console</span></span>
+    <span><b>GET /v1/stream</b> <span class="ko">전역 SSE · 재연결 시 최근 200건 리플레이</span><span class="en">global SSE · replays the last 200 on reconnect</span></span>
+    <span><b>POST /v1/jobs/:id/cancel</b> <span class="ko">이 화면에서 가능한 유일한 쓰기 동작</span><span class="en">the only write this screen can perform</span></span>
+  </div>
+</div>
+
+<script src="/console/console.js"></script>
+</body>
+</html>

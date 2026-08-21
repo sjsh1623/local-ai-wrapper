@@ -1,0 +1,29 @@
+# Fallback routing for SigNoz alerts that cannot carry `autofix` / `repo` labels.
+#
+# Labels on the alert rule always win.  This file is only consulted when a
+# matching label is absent.  An alert that matches nothing here AND carries no
+# labels is ignored — that is the intended default.
+#
+# 알럿 룰의 라벨이 항상 우선입니다. 이 파일은 라벨이 없을 때만 참조되고,
+# 둘 다 없으면 그 알럿은 무시됩니다.
+
+routes:
+  - match:
+      alertname: WebhookDeliveryFailureRate
+    repo: sjsh1623/morningmate-api
+    base: develop
+    verify:
+      - npm ci
+      - npm test
+    pr:
+      draft: true
+      labels: [autofix]
+      reviewers: [sjsh1623]
+
+  - match:
+      service.name: morningmate-web
+    repo: sjsh1623/morningmate-web
+    base: main
+    verify:
+      - npm ci
+      - npm test

@@ -1,0 +1,34 @@
+services:
+  branchsmith:
+    build:
+      context: .
+      args:
+        # On Linux, set these to your own id so the mounted ~/.claude stays
+        # writable:  APP_UID=$(id -u)  APP_GID=$(id -g)
+        APP_UID: ${APP_UID:-1001}
+        APP_GID: ${APP_GID:-1001}
+    image: branchsmith:local
+    # Local only. If SigNoz runs on another machine this is the one line to
+    # revisit — and the moment to put a reverse proxy in front.
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file: .env
+    volumes:
+      # Read-WRITE on purpose: a read-only mount stalls at the first token
+      # refresh and the agent stops working with no obvious cause.
+      - ${HOME}/.claude:/home/app/.claude
+      - ${HOME}/.claude.json:/home/app/.claude.json
+      - repo-cache:/data/cache
+      - job-db:/data/db
+      - ./routes.yml:/app/routes.yml:ro
+    healthcheck:
+      test: ["CMD", "node", "dist/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  repo-cache:
+  job-db:

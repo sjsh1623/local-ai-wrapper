@@ -1,0 +1,30 @@
+{
+  "name": "branchsmith",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turns a SigNoz alert into a pull request, using the Claude Code installed on this machine.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && npm run copy:assets",
+    "copy:assets": "node scripts/copy-assets.mjs",
+    "dev": "node --watch --experimental-strip-types src/server.ts",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "healthcheck": "node dist/healthcheck.js"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@octokit/rest": "^21.1.1",
+    "better-sqlite3": "^11.10.0",
+    "fastify": "^5.2.1",
+    "pino": "^9.6.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}
