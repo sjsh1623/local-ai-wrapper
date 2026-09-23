@@ -2,66 +2,75 @@ import { getConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { run } from '../util/exec.js';
 import { consume, newState, summary } from './stream.js';
-import type { StreamState, ToolActivity } from './stream.js';
+import * as mcp from './mcp.js';
+import { relativize } from './types.js';
+import type { AgentCheck, AgentOptions, AgentRun } from './types.js';
 
 const cfg = getConfig();
 
-export interface AgentRun {
-  ok: boolean;
-  timedOut: boolean;
-  files: number;
-  turns: number;
-  resultText: string | null;
-  stderr: string;
-}
-
-export interface AgentOptions {
-  cwd: string;
-  prompt: string;
-  signal?: AbortSignal;
-  onTool?: (activity: ToolActivity, state: StreamState) => void;
-}
 
 /**
- * Wires the SigNoz MCP server in when one is configured.
+ * Wires in the MCP servers this run was offered — see agent/mcp.ts.
  *
  * --strict-mcp-config is not optional here. HOME points at the mounted ~/.claude,
  * so without it Claude Code would also load whatever MCP servers the host user
  * has registered — personal mail, drive, chat — into an agent that is supposed to
- * see one observability backend and the checked-out repository.
+ * see the sources this alert's route named and the checked-out repository.
+ *
+ * A bearer token goes inline in the header, which the Codex driver deliberately
+ * avoids. It is tolerable here only because this driver denies Bash outright:
+ * there is nothing running under it that could read its own argv.
  */
-function mcpArgs(): string[] {
-  if (!cfg.SIGNOZ_MCP_URL) return [];
-  const config = JSON.stringify({
-    mcpServers: { signoz: { type: 'http', url: cfg.SIGNOZ_MCP_URL } },
-  });
-  return ['--mcp-config', config, '--strict-mcp-config'];
+function mcpArgs(options: AgentOptions): string[] {
+  const list = mcp.servers(options.mcp);
+  if (!list.length) return [];
+  const mcpServers: Record<string, unknown> = {};
+  for (const server of list) {
+    mcpServers[server.name] = server.token
+      ? { type: 'http', url: server.url, headers: { Authorization: `Bearer ${server.token}` } }
+      : { type: 'http', url: server.url };
+  }
+  return ['--mcp-config', JSON.stringify({ mcpServers }), '--strict-mcp-config'];
 }
 
-function allowedTools(): string {
-  // Granting the server by prefix rather than naming ~40 tools, which the SigNoz
-  // server is free to rename between releases. Only added when MCP is actually on.
+/** The writing tools, which a read-only pass has to be stripped of. */
+const WRITE_TOOLS = ['Edit', 'Write', 'NotebookEdit', 'MultiEdit'];
+
+function allowedTools(options: AgentOptions): string {
+  // Granting each server by prefix rather than naming ~40 tools, which a server
+  // is free to rename between releases. Only the servers actually offered.
   const tools = [...cfg.CLAUDE_ALLOWED_TOOLS];
-  if (cfg.SIGNOZ_MCP_URL) tools.push('mcp__signoz');
-  return tools.join(',');
+  for (const server of mcp.servers(options.mcp)) tools.push(`mcp__${server.name}`);
+  const usable = options.readOnly ? tools.filter((tool) => !WRITE_TOOLS.includes(tool)) : tools;
+  return usable.join(',');
 }
 
-function claudeArgs(prompt: string): string[] {
+function deniedTools(options: AgentOptions): string {
+  // The allow list alone was observed not to keep a tool out, so a read-only
+  // pass names the writers on the deny list as well.
+  const denied = [...cfg.CLAUDE_DISALLOWED_TOOLS];
+  if (options.readOnly) {
+    for (const tool of WRITE_TOOLS) if (!denied.includes(tool)) denied.push(tool);
+  }
+  return denied.join(',');
+}
+
+function claudeArgs(prompt: string, options: AgentOptions): string[] {
   return [
     '--print',
     prompt,
     '--output-format',
     'stream-json',
     '--verbose',
-    ...mcpArgs(),
+    ...mcpArgs(options),
     '--permission-mode',
     cfg.CLAUDE_PERMISSION_MODE,
     '--allowedTools',
-    allowedTools(),
+    allowedTools(options),
     // An allow list on its own was observed not to keep Bash out, so the deny
     // list is what actually closes the shell.
     '--disallowedTools',
-    cfg.CLAUDE_DISALLOWED_TOOLS.join(','),
+    deniedTools(options),
     '--max-turns',
     String(cfg.CLAUDE_MAX_TURNS),
     '--model',
@@ -80,13 +89,16 @@ function agentEnv(): NodeJS.ProcessEnv {
   }
   // The repository being edited must never inherit our own secrets.
   delete env.GITHUB_TOKEN;
-  delete env.BRANCHSMITH_GIT_TOKEN;
-  delete env.FLOW_API_TOKEN;
+  delete env.MORNINGMATE_ALERT_GIT_TOKEN;
+  delete env.FLOW_API_KEY;
   delete env.API_KEYS;
   delete env.SIGNOZ_WEBHOOK_PASS;
   // The MCP server holds the SigNoz credential and the agent talks to the MCP
   // server, so the agent itself never needs the key in its environment.
   delete env.SIGNOZ_API_KEY;
+  // The Stripe key travels in the MCP header this driver builds, never in the
+  // environment the agent can read.
+  delete env.STRIPE_MCP_KEY;
   return env;
 }
 
@@ -94,16 +106,14 @@ function agentEnv(): NodeJS.ProcessEnv {
 export async function runAgent(options: AgentOptions): Promise<AgentRun> {
   const state = newState();
 
-  const result = await run(cfg.CLAUDE_BIN, claudeArgs(options.prompt), {
+  const result = await run(cfg.CLAUDE_BIN, claudeArgs(options.prompt, options), {
     cwd: options.cwd,
     env: agentEnv(),
-    timeoutMs: cfg.AGENT_TIMEOUT_MS,
+    timeoutMs: options.timeoutMs ?? cfg.AGENT_TIMEOUT_MS,
     signal: options.signal,
     onLine: (line) => {
       const activity = consume(state, line);
       if (!activity || !options.onTool) return;
-      // Absolute worktree paths are noise in a Flow comment; show what a reader
-      // of the repository would recognise.
       options.onTool({ ...activity, target: relativize(activity.target, options.cwd) }, state);
     },
   });
@@ -127,13 +137,8 @@ export async function runAgent(options: AgentOptions): Promise<AgentRun> {
   };
 }
 
-function relativize(target: string, cwd: string): string {
-  if (!target.startsWith(cwd)) return target;
-  return target.slice(cwd.length).replace(/^\/+/, '') || '.';
-}
-
 /** Used by /readyz: is the binary there and does it have a usable session? */
-export async function checkClaude(): Promise<{ ok: boolean; version: string; error?: string }> {
+export async function check(): Promise<AgentCheck> {
   try {
     const result = await run(cfg.CLAUDE_BIN, ['--version'], {
       env: agentEnv(),

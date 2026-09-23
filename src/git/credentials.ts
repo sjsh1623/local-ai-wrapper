@@ -8,12 +8,12 @@ const cfg = getConfig();
  * or in the reflog — the three places a pushed secret tends to survive.
  */
 export const CREDENTIAL_HELPER =
-  '!f() { echo username=x-access-token; echo "password=$BRANCHSMITH_GIT_TOKEN"; }; f';
+  '!f() { echo username=x-access-token; echo "password=$MORNINGMATE_ALERT_GIT_TOKEN"; }; f';
 
 export function gitEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
     ...process.env,
-    BRANCHSMITH_GIT_TOKEN: cfg.GITHUB_TOKEN,
+    MORNINGMATE_ALERT_GIT_TOKEN: cfg.GITHUB_TOKEN,
     GIT_TERMINAL_PROMPT: '0',
     GIT_CONFIG_NOSYSTEM: '1',
     ...extra,

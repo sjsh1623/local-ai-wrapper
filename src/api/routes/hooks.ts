@@ -8,10 +8,15 @@ import * as queue from '../../jobs/queue.js';
 
 export default async function hookRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/hooks/signoz', { preHandler: requireSignozBasic }, async (req, reply) => {
+    // The whole body, once, before anything can decide to drop it. Which alerts
+    // became jobs is easy to reconstruct afterwards from the job records; what
+    // SigNoz actually put on the wire is not, unless it was written down here.
+    logger.info({ webhook: req.body }, 'SigNoz webhook received');
+
     const parsed = signozPayloadSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       // Still a 200: a 4xx makes SigNoz redeliver the whole batch on a loop.
-      logger.warn({ issues: parsed.error.issues }, 'unrecognised SigNoz payload');
+      logger.warn({ issues: parsed.error.issues, body: req.body }, 'unrecognised SigNoz payload');
       return reply.code(200).send({ accepted: 0, skipped: 0, error: 'unrecognised payload' });
     }
 

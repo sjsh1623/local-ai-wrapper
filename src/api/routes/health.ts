@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { getConfig } from '../../config.js';
 import { run } from '../../util/exec.js';
-import { checkClaude } from '../../agent/claude.js';
+import { activeProvider, agentBin, checkAgent } from '../../agent/index.js';
+import * as mcp from '../../agent/mcp.js';
 import { checkToken } from '../../forge/github.js';
-import { flowEnabled } from '../../notify/transports/flow.js';
+import { flowEnabled, mode as flowMode } from '../../notify/transports/flow.js';
 import * as queue from '../../jobs/queue.js';
 import * as store from '../../jobs/store.js';
 
@@ -22,7 +23,14 @@ async function checkSignozMcp(): Promise<{ ok: boolean; detail?: string }> {
   try {
     const res = await fetch(cfg.SIGNOZ_MCP_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        // Both types, not just JSON. A streamable-HTTP server answers 400
+        // ("Not Acceptable") to an Accept header that omits text/event-stream,
+        // which reads on /readyz as a broken endpoint rather than a probe that
+        // asked wrongly — observed against signoz/signoz-mcp-server.
+        accept: 'application/json, text/event-stream',
+      },
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
@@ -30,7 +38,7 @@ async function checkSignozMcp(): Promise<{ ok: boolean; detail?: string }> {
         params: {
           protocolVersion: '2025-06-18',
           capabilities: {},
-          clientInfo: { name: 'branchsmith-readyz', version: '1' },
+          clientInfo: { name: 'morningmate-alert-readyz', version: '1' },
         },
       }),
       signal: AbortSignal.timeout(10_000),
@@ -60,10 +68,12 @@ export default async function healthRoutes(app: FastifyInstance): Promise<void> 
     }));
     checks.git = { ok: git.code === 0, detail: git.stdout.trim() || git.stderr.trim() };
 
-    const claude = await checkClaude();
-    checks.claude = claude.ok
-      ? { ok: true, detail: claude.version }
-      : { ok: false, detail: claude.error };
+    // Keyed by provider so a readyz payload says which agent it actually probed;
+    // "claude: ok" while running Codex would be the wrong thing to page on.
+    const agent = await checkAgent();
+    checks[activeProvider()] = agent.ok
+      ? { ok: true, detail: agent.version }
+      : { ok: false, detail: agent.error ?? `${agentBin()} is not usable` };
 
     try {
       checks.github = { ok: true, detail: `authenticated as ${await checkToken()}` };
@@ -71,11 +81,37 @@ export default async function healthRoutes(app: FastifyInstance): Promise<void> 
       checks.github = { ok: false, detail: String(err) };
     }
 
-    checks.flow = flowEnabled()
-      ? { ok: true, detail: cfg.FLOW_API_BASE }
-      : { ok: true, detail: 'disabled — FLOW_API_BASE is empty' };
+    // The mode matters more than the fact that Flow is on: webhook mode cannot
+    // change a task's status or comment on its thread, and that difference is
+    // invisible from anywhere else.
+    const flow = flowMode();
+    const hooks = Object.keys(cfg.flowWebhooks).join(', ') || 'none';
+    const detail: Record<typeof flow, string> = {
+      api: `${cfg.FLOW_API_SURFACE} API · project ${cfg.FLOW_PROJECT_ID} · task, status and thread comments`,
+      'v1+webhook':
+        `v1 API · project ${cfg.FLOW_PROJECT_ID} · task and status. ` +
+        `Updates go to the webhook (${hooks}) as separate items — /v1 has no comments endpoint. ` +
+        'A personal key with FLOW_API_SURFACE=user makes them thread comments.',
+      webhook:
+        `incoming webhook (${hooks}) — registers tasks only. ` +
+        'No id comes back, so status changes and comments are skipped.',
+      disabled: 'disabled — no FLOW_API_KEY and no FLOW_WEBHOOK_URL',
+    };
+    checks.flow = { ok: true, detail: detail[flow] };
+    void flowEnabled();
 
     checks.signozMcp = await checkSignozMcp();
+
+    // Reported, never failed on. Stripe is offered to billing alerts only, so a
+    // deployment with no key is a correct one for everybody else — flipping
+    // /readyz to 503 over it would stop the whole instance from taking work.
+    const stripe = mcp.configured('stripe');
+    checks.stripeMcp = {
+      ok: true,
+      detail: stripe
+        ? `${stripe.url} — offered to routes with \`mcp: [stripe]\``
+        : 'not configured; billing alerts are diagnosed without Stripe (set STRIPE_MCP_KEY)',
+    };
 
     const ok = Object.values(checks).every((c) => c.ok);
     return reply.code(ok ? 200 : 503).send({ ok, checks, stats: store.statsToday() });

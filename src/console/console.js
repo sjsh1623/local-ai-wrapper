@@ -1,4 +1,4 @@
-/* Branchsmith console — reads /v1/jobs and /v1/stream, writes only /cancel. */
+/* morningmate-alert console — reads /v1/jobs and /v1/stream, writes only /cancel. */
 (function () {
   var app = document.getElementById('app');
   var L = 'ko';
@@ -8,10 +8,13 @@
   var selected = null;
   var thread = { jobId: null, events: [], failedDeliveries: [] };
 
-  var STAGES = ['queued','preparing','branching','planning','editing','verifying','committing','pushing','pr_opened'];
+  /* Must stay in the same order as STAGES in src/types.ts — the progress bar
+     indexes into it, so a stage missing here silently renders as step 0. */
+  var STAGES = ['queued','triaging','registering','preparing','branching','analyzing','editing','verifying','committing','pushing','pr_opened'];
   var STAGE_LABEL = {
-    queued:{ko:'접수',en:'accepted'}, preparing:{ko:'작업 공간',en:'workspace'},
-    branching:{ko:'브랜치',en:'branch'}, planning:{ko:'맥락 수집',en:'context'},
+    queued:{ko:'접수',en:'accepted'}, triaging:{ko:'이슈 정리',en:'triage'},
+    registering:{ko:'업무 등록',en:'task'}, preparing:{ko:'작업 공간',en:'workspace'},
+    branching:{ko:'브랜치',en:'branch'}, analyzing:{ko:'원인 분석',en:'root cause'},
     editing:{ko:'코드 수정',en:'editing'}, verifying:{ko:'검증',en:'verifying'},
     committing:{ko:'커밋',en:'commit'}, pushing:{ko:'푸시',en:'push'}, pr_opened:{ko:'PR 생성',en:'PR'}
   };
@@ -71,7 +74,7 @@
   function segs(job) {
     var idx = STAGES.indexOf(job.stage) + 1;
     var out = '';
-    for (var i = 0; i < 9; i++) {
+    for (var i = 0; i < STAGES.length; i++) {
       var c = '';
       if (job.status === 'succeeded' || job.status === 'no_changes') c = 'on';
       else if (isTerminal(job) && i === idx - 1) c = 'bad';
@@ -169,7 +172,7 @@
   /** Classify one stored event into one of the timeline's visual kinds. */
   function kindOf(event) {
     if (event.status === 'failed') return 'error';
-    if (event.stage === 'editing' && event.status === 'running') return 'tool';
+    if ((event.stage === 'editing' || event.stage === 'analyzing') && event.status === 'running') return 'tool';
     if (event.stage === 'pr_opened' && event.status === 'done') return 'result';
     if (event.data && event.data.dryRun) return 'result';
     return 'stage';
@@ -195,8 +198,15 @@
   function webhookSummary(job) {
     var c = job.context || {};
     var lines = [(L === 'ko' ? '수신 웹훅' : 'Inbound webhook') + ' · ' + (c.source || '—')];
-    ['alertname','severity','service','env','deployment.environment','category','team','fingerprint']
-      .forEach(function (k) { if (c[k]) lines.push(k + ': ' + c[k]); });
+    // Every field the adapter kept, in the order it kept them — a fixed list
+    // here would hide exactly the label that explains an unfamiliar alert
+    // (host.name, mountpoint, threshold.name). `source` is already in the
+    // heading, alertUrl is rendered as a link below, and `_`-prefixed keys hold
+    // the raw body that has its own foldaway block.
+    Object.keys(c).forEach(function (k) {
+      if (k === 'source' || k === 'alertUrl' || k.charAt(0) === '_') return;
+      if (c[k]) lines.push(k + ': ' + c[k]);
+    });
     lines.push('repo: ' + job.repo + ' (' + job.base + ')' + (job.dryRun ? ' · dryRun' : ''));
     if (c.alertUrl) lines.push(c.alertUrl);
     var first = firstLine(job.instruction);
@@ -245,7 +255,11 @@
       '<span><b>' + esc(job.id) + '</b></span>' +
       '<span>' + esc(job.repo) + ' ← ' + esc(job.base) + '</span>' +
       (job.branch ? '<span>' + esc(job.branch) + '</span>' : '') +
-      (job.flowPostId ? '<span>flow #' + esc(job.flowPostId) + '</span>' : '') +
+      (job.flowTaskId
+        ? '<span>' + (job.flowUrl
+            ? '<a href="' + esc(job.flowUrl) + '" target="_blank" rel="noreferrer noopener">flow #' + esc(job.flowTaskId) + '</a>'
+            : 'flow #' + esc(job.flowTaskId)) + '</span>'
+        : '') +
       (job.dryRun ? '<span>dryRun</span>' : '') +
       (job.prUrl ? '<span><a href="' + esc(job.prUrl) + '" target="_blank" rel="noreferrer noopener">PR</a></span>' : '');
 
@@ -409,13 +423,13 @@
       document.querySelectorAll('.langswitch button').forEach(function (x) {
         x.setAttribute('aria-pressed', String(x.dataset.lang === L));
       });
-      try { localStorage.setItem('branchsmith-lang', L); } catch (e) {}
+      try { localStorage.setItem('morningmate-alert-lang', L); } catch (e) {}
       renderStats(); renderFilters(); renderRows(); renderThread();
     });
   });
 
   var saved = null;
-  try { saved = localStorage.getItem('branchsmith-lang'); } catch (e) {}
+  try { saved = localStorage.getItem('morningmate-alert-lang'); } catch (e) {}
   if (saved === 'en' || saved === 'ko') {
     L = saved;
     app.className = 'lang-' + L;

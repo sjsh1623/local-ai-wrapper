@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { getConfig } from '../config.js';
 import { logger } from '../logger.js';
+import { displayContext } from '../types.js';
 import type { Job } from '../types.js';
 
 const cfg = getConfig();
@@ -17,9 +18,10 @@ function bodyFor(job: Job, diffStat: string): string {
   const lines: string[] = [];
   lines.push(job.instruction.trim(), '');
 
-  if (Object.keys(job.context).length) {
+  const context = displayContext(job.context);
+  if (context.length) {
     lines.push('---', '');
-    for (const [k, v] of Object.entries(job.context)) {
+    for (const [k, v] of context) {
       lines.push(`- **${k}**: ${v}`);
     }
     lines.push('');
@@ -30,7 +32,7 @@ function bodyFor(job: Job, diffStat: string): string {
   }
 
   lines.push(
-    `<sub>Opened by Branchsmith · job \`${job.id}\`` +
+    `<sub>Opened by morningmate-alert · job \`${job.id}\`` +
       (job.context.alertUrl ? ` · [alert](${job.context.alertUrl})` : '') +
       '</sub>',
   );

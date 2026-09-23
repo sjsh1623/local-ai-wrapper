@@ -9,6 +9,34 @@
 #
 # dryRun: true 는 "고쳐보고 diff 만 보고하고 push/PR 은 하지 않는다"는 뜻이다.
 # 실제로 PR 을 열 준비가 된 라우트만 하나씩 false 로 내려라.
+#
+# flowProjectId 는 그 알럿의 업무가 등록될 Flow 프로젝트다. 비우면 .env 의
+# FLOW_PROJECT_ID 로 간다.
+#
+# 예전에는 SigNoz 가 flow-relay 채널로 직접 쏘고, 릴레이가 team 라벨을 보고
+# release/billing 을 각각 다른 방으로 갈랐다. 이제 Flow 를 부르는 쪽이 Node 라
+# 그 분기를 여기서 한다 — 아래 라우트에 flowProjectId 를 채워 넣지 않으면
+# 모든 알럿이 기본 프로젝트 한 곳으로 모인다. 이게 릴레이 제거로 잃을 수 있는
+# 유일한 동작이니, 채널을 떼기 전에 여기부터 채울 것.
+# flowWorkers 는 그 업무의 담당자(Flow 계정 ID)다. 비우면 FLOW_WORKERS.
+#
+# 지금은 /v1 관리자 키라 **둘 다** 필요하다:
+#   flowProjectId — 업무가 등록되고 상태가 바뀌는 Flow 프로젝트 (REST).
+#   flowWebhook   — 원인 분석·PR 주소가 올라갈 웹훅 엔드포인트 (.env 의
+#                   FLOW_WEBHOOK_<NAME>_URL 이름, 소문자. 빈 값이면 default).
+# /v1 에는 댓글 API 가 없어서 업데이트만 웹훅으로 나간다. 개인용 키를 발급해
+# FLOW_API_SURFACE=user 로 바꾸면 업데이트도 그 업무의 진짜 댓글이 되고,
+# flowWebhook 은 필요 없어진다.
+#
+# 현재 매핑: 2952588 = [Production] Morningmate Signoz (default)
+#            2954511 = [Production] Morningmate Billing Signoz (billing)
+#
+# mcp 는 그 알럿을 조사할 때 에이전트에게 열어줄 MCP 서버 목록이다. SigNoz 는
+# 항상 열려 있으므로 여기엔 "그 외에 더" 필요한 것만 적는다. 빌링 알럿은
+# 실패한 결제 자체가 트레이스가 아니라 Stripe 에 있어서 `[stripe]` 가 붙는다.
+# .env 의 STRIPE_MCP_KEY 가 비어 있으면 경고 한 줄만 남기고 그냥 없이 돈다 —
+# 조사 품질이 내려갈 뿐 잡은 죽지 않는다. 키는 반드시 **읽기 전용 제한 키**로
+# 발급할 것. 에이전트는 셸을 갖고 있고, 조사에 필요한 건 읽기뿐이다.
 
 routes:
   # ── 조치 대상이 아닌 알럿 ──────────────────────────────────────
@@ -68,14 +96,35 @@ routes:
     dryRun: true
 
   # ── 빌링 / 결제 ───────────────────────────────────────────────
+  # 실배포로 연 첫 라우트다(2026-08-25). 여기를 먼저 고른 이유:
+  # 레포가 3MB 라 클론이 빠르고, 빌링 알럿은 임계치가 1건이라 신호가 명확하며,
+  # 레이어 규칙(presentation→application→domain)이 문서화돼 있어 결과물을 검토하기 쉽다.
+  # 다른 라우트를 열기 전에 여기서 나온 PR 품질을 먼저 확인할 것.
   - match: { service.name: tokyo-billing-production }
     repo: madrascheck-dev/morningmate-payment
     base: master
-    dryRun: true
+    dryRun: false
+    flowProjectId: "2954511"
+    flowWebhook: billing
+    mcp: [stripe]
   - match: { service.name: tokyo-payment-release }
     repo: madrascheck-dev/morningmate-payment
     base: master
+    dryRun: false
+    flowProjectId: "2954511"
+    flowWebhook: billing
+    mcp: [stripe]
+
+  # 빌링 알럿 중 service.name 라벨이 없는 것들(그룹핑이 서비스로 안 나뉜 규칙)을
+  # 위 두 줄이 놓친다. 릴레이는 team 라벨만 보고 갈랐으므로 그 동작을 유지하려면
+  # 이 그물이 필요하다. 목적지 레포는 "일단 조사해볼 곳"이라 dryRun 을 풀지 말 것.
+  - match: { team: billing }
+    repo: madrascheck-dev/morningmate-payment
+    base: master
     dryRun: true
+    flowProjectId: "2954511"
+    flowWebhook: billing
+    mcp: [stripe]
 
   # ── catch-all ─────────────────────────────────────────────────
   # 빈 match 는 모든 알럿에 걸린다(빈 조건의 every 는 true).

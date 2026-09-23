@@ -19,7 +19,26 @@ const routeSchema = z
     // Lets a route stay in report-only mode without touching every alert rule's labels.
     // A rule that carries no labels at all is exactly the case routes.yml exists for.
     dryRun: z.boolean().default(false),
+    // Which Flow project this alert's task is registered in. Empty falls back
+    // to FLOW_PROJECT_ID.
+    //
+    // This is what replaces the relay's label fan-out. Until Node took over the
+    // Flow side, `signoz-flow-relay` read `team` off each alert and posted to a
+    // different room for release and billing; routing that here keeps those
+    // audiences separate instead of collapsing every alert onto one board.
+    flowProjectId: z.string().optional(),
+    // Flow ids assigned to the created task. Empty falls back to FLOW_WORKERS.
+    flowWorkers: z.array(z.string()).default([]),
+    // Which named Flow webhook endpoint this alert posts to, in webhook mode —
+    // the name in FLOW_WEBHOOK_<NAME>_URL, lower-cased. Empty means `default`.
+    // Same purpose as flowProjectId above, for the key-less path.
+    flowWebhook: z.string().optional(),
     verify: z.array(z.string()).default([]),
+    // Extra MCP servers the agent may consult on this alert, beyond SigNoz —
+    // the names in src/agent/mcp.ts. `stripe` is what makes a billing alert
+    // diagnosable: the failed charge is in Stripe, not in the traces. A name
+    // with no configuration behind it is dropped with a warning at run time.
+    mcp: z.array(z.string()).default([]),
     pr: z
       .object({
         draft: z.boolean().default(true),

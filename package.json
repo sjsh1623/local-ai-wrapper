@@ -1,5 +1,5 @@
 {
-  "name": "branchsmith",
+  "name": "morningmate-alert",
   "version": "0.1.0",
   "private": true,
   "description": "Turns a SigNoz alert into a pull request, using the Claude Code installed on this machine.",

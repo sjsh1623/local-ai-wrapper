@@ -7,13 +7,33 @@ import type { JobRequest, Locale } from '../types.js';
 const cfg = getConfig();
 
 /**
+ * Alertmanager writes every label and annotation as a string, but a hand-rolled
+ * curl or a future SigNoz release can put a number or a bool in there. Coercing
+ * beats rejecting: the hook answers 200 on a parse failure so SigNoz stops
+ * redelivering, which means a strict schema would make the alert disappear
+ * rather than arrive imperfectly.
+ */
+const stringMap = z
+  .record(z.union([z.string(), z.number(), z.boolean(), z.null()]))
+  .optional()
+  .transform((map) => {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(map ?? {})) {
+      if (value === null || value === '') continue;
+      out[key] = String(value);
+    }
+    return out;
+  });
+
+/**
  * SigNoz posts Prometheus Alertmanager v4 JSON and the body cannot be
- * templated, so this is the shape we have to accept as given.
+ * templated, so this is the shape we have to accept as given. The only lever on
+ * the sending side is what the alert rule puts in `labels` and `annotations`.
  */
 export const alertSchema = z.object({
   status: z.string().optional(),
-  labels: z.record(z.string()).default({}),
-  annotations: z.record(z.string()).default({}),
+  labels: stringMap,
+  annotations: stringMap,
   startsAt: z.string().optional(),
   endsAt: z.string().optional(),
   generatorURL: z.string().optional(),
@@ -24,11 +44,15 @@ export const signozPayloadSchema = z.object({
   receiver: z.string().optional(),
   status: z.string().optional(),
   alerts: z.array(alertSchema).default([]),
-  groupLabels: z.record(z.string()).optional(),
-  commonLabels: z.record(z.string()).optional(),
-  commonAnnotations: z.record(z.string()).optional(),
+  groupLabels: stringMap,
+  commonLabels: stringMap,
+  commonAnnotations: stringMap,
   externalURL: z.string().optional(),
   version: z.string().optional(),
+  // Alertmanager's grouping key. Two batches carrying the same key are the same
+  // group re-notified, which is worth recording even though we key idempotency
+  // off the per-alert fingerprint.
+  groupKey: z.string().optional(),
   truncatedAlerts: z.number().optional(),
 });
 
@@ -40,42 +64,104 @@ export type Decision =
   | { action: 'cancel'; fingerprint: string }
   | { action: 'skip'; reason: string; fingerprint: string };
 
+/**
+ * SigNoz fills the batch's `externalURL` with whatever address its own container
+ * believes it has — observed on the wire as `http://localhost:8080`, which is a
+ * dead link for everyone reading it here.
+ */
+function reachable(url?: string): string | undefined {
+  if (!url) return undefined;
+  return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)([:/]|$)/.test(url) ? undefined : url;
+}
+
+/** Alertmanager sends this as `endsAt` while an alert is still firing. */
+function realTime(value?: string): string | undefined {
+  return !value || value.startsWith('0001-01-01') ? undefined : value;
+}
+
+/** Annotations consumed by name below; everything else is passed through as-is. */
+const NAMED_ANNOTATIONS = new Set(['summary', 'description', 'info', 'value', 'threshold', 'unit']);
+
+/**
+ * How bad it is, in one line.
+ *
+ * `value` and `threshold` are SigNoz's `{{$value}}` / `{{$threshold}}` rendered
+ * at notify time, and they are the only quantitative fact in the whole payload.
+ * They used to be dropped, which left the agent reading "the failure rate is
+ * over 5%" with no idea whether it was 5.1% or 40%.
+ */
+function measurement(annotations: Record<string, string>): string | null {
+  const { value, threshold, unit } = annotations;
+  if (!value) return null;
+  const suffix = unit ? ` ${unit}` : '';
+  return threshold
+    ? `Measured ${value}${suffix} against a threshold of ${threshold}${suffix}.`
+    : `Measured ${value}${suffix}.`;
+}
+
 function instructionFrom(alert: SigNozAlert): string {
   const a = alert.annotations;
-  const parts = [a.summary, a.description, a.info].filter(Boolean) as string[];
+  const parts: string[] = [];
+
+  for (const key of ['summary', 'description', 'info']) {
+    const text = a[key];
+    if (text) parts.push(text);
+  }
+
+  const measured = measurement(a);
+  if (measured) parts.push(measured);
+
+  // Whatever the rule author added beyond the six keys above — a runbook, the
+  // query expression, the evaluation window. Rules are free to invent keys, and
+  // an annotation nobody here anticipated is exactly the one worth forwarding.
+  const extra = Object.entries(a)
+    .filter(([key]) => !NAMED_ANNOTATIONS.has(key))
+    .map(([key, value]) => `- ${key}: ${value}`);
+  if (extra.length) parts.push(`From the alert rule:\n${extra.join('\n')}`);
+
   if (parts.length === 0) {
-    parts.push(`Alert ${alert.labels.alertname ?? 'unknown'} is firing.`);
+    parts.push(`Alert ${a.alertname ?? alert.labels.alertname ?? 'unknown'} is firing.`);
   }
   return parts.join('\n\n');
 }
 
-function contextFrom(alert: SigNozAlert, externalURL?: string): Record<string, string> {
+function contextFrom(alert: SigNozAlert, payload: SigNozPayload): Record<string, string> {
   const ctx: Record<string, string> = { source: 'signoz' };
-  // These are the labels the alert rules here actually carry, so they are the ones
-  // worth a named slot. Everything else survives in `_raw` below rather than
-  // being dropped — a label nobody anticipated is usually the interesting one.
-  const carry = [
-    'alertname',
-    'severity',
-    'service.name',
-    'deployment.environment',
-    'env',
-    'category',
-    'team',
-  ];
-  for (const key of carry) {
-    const value = alert.labels[key];
-    if (value) ctx[key === 'service.name' ? 'service' : key] = value;
-  }
-  if (alert.generatorURL) ctx.alertUrl = alert.generatorURL;
-  else if (externalURL) ctx.alertUrl = externalURL;
-  if (alert.startsAt) ctx.startsAt = alert.startsAt;
+
+  const status = alert.status ?? payload.status;
+  if (status) ctx.status = status;
+  const startsAt = realTime(alert.startsAt);
+  const endsAt = realTime(alert.endsAt);
+  if (startsAt) ctx.startsAt = startsAt;
+  if (endsAt) ctx.endsAt = endsAt;
   if (alert.fingerprint) ctx.fingerprint = alert.fingerprint;
+  if (payload.receiver) ctx.receiver = payload.receiver;
+  if (payload.groupKey) ctx.groupKey = payload.groupKey;
+
+  // On the record rather than only inside the prose, so the console can show the
+  // number without anyone unfolding the raw body.
+  for (const key of ['value', 'threshold', 'unit']) {
+    const value = alert.annotations[key];
+    if (value) ctx[key] = value;
+  }
+
+  // Every label, not a chosen seven. The old whitelist silently dropped whatever
+  // nobody had anticipated — `threshold.name` (which tier of an 85%/92% rule
+  // actually fired), `host.name`, `mountpoint` — and those are usually the
+  // labels that say which series is in trouble.
+  for (const [key, value] of Object.entries(alert.labels)) {
+    // The console, the commit trailer and routes.yml all read `service`;
+    // SigNoz calls it `service.name`. Renamed rather than carried twice.
+    ctx[key === 'service.name' ? 'service' : key] = value;
+  }
+
+  const alertUrl = alert.generatorURL || reachable(payload.externalURL) || cfg.SIGNOZ_URL;
+  if (alertUrl) ctx.alertUrl = alertUrl;
 
   // The webhook exactly as it arrived. Without it the console can only show what
   // this function chose to keep, and "why did it decide that" becomes unanswerable
-  // after the fact. Underscore-prefixed so the UI knows to render it apart from
-  // the ordinary key/value fields.
+  // after the fact. Underscore-prefixed so `displayContext` keeps it out of the
+  // agent prompt and the pull request body, where a JSON blob is just noise.
   ctx._raw = JSON.stringify(alert);
   return ctx;
 }
@@ -138,7 +224,11 @@ export function decide(alert: SigNozAlert, payload: SigNozPayload): Decision {
     };
   }
 
-  const severity = labels.severity;
+  // A multi-tier rule (85% warning / 92% critical) carries one static `severity`
+  // label plus the tier that actually crossed. SigNoz names that label
+  // `threshold.name` — with a dot, confirmed against alert history — so both
+  // spellings are read rather than betting on one surviving a release.
+  const severity = labels.severity ?? labels['threshold.name'] ?? labels.threshold_name;
   if (severity && !cfg.SIGNOZ_SEVERITIES.includes(severity)) {
     return { action: 'skip', reason: `severity ${severity} is not acted on`, fingerprint };
   }
@@ -155,15 +245,32 @@ export function decide(alert: SigNozAlert, payload: SigNozPayload): Decision {
     base: labels.base ?? route?.base ?? cfg.DEFAULT_BASE_BRANCH,
     branch: labels.branch ?? null,
     instruction: instructionFrom(alert),
-    context: contextFrom(alert, payload.externalURL),
+    context: contextFrom(alert, payload),
     verify: route?.verify ?? [],
+    // A label wins over the route, as everywhere else here: `mcp: stripe,signoz`
+    // on an alert rule overrides whatever routes.yml picked for it.
+    mcp: labels.mcp
+      ? labels.mcp.split(',').map((name) => name.trim()).filter(Boolean)
+      : (route?.mcp ?? []),
     pr: {
       draft: route?.pr.draft ?? true,
       labels: route?.pr.labels ?? [],
       reviewers: route?.pr.reviewers ?? [],
       title: route?.pr.title,
     },
-    notify: { kind: 'flow', postId: labels.flowPostId ?? null },
+    notify: {
+      kind: 'flow',
+      // Label beats route beats FLOW_PROJECT_ID, the same precedence every
+      // other field here uses.
+      projectId: labels.flowProjectId ?? route?.flowProjectId ?? null,
+      // Both ids or neither: commenting on an existing thread needs the post,
+      // and moving its card needs the task. Half of the pair would silently
+      // open a second task on the next firing.
+      taskId: labels.flowTaskId ?? null,
+      postId: labels.flowPostId ?? null,
+      workers: route?.flowWorkers?.length ? route.flowWorkers : null,
+      webhook: labels.flowWebhook ?? route?.flowWebhook ?? null,
+    },
     locale,
     // Label wins per field, as everywhere else; the route only fills the gap. An
     // alert rule that says nothing about dryRun inherits its route's setting.

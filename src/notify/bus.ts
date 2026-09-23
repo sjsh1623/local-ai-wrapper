@@ -7,7 +7,7 @@ import * as sse from './transports/sse.js';
 import * as webhook from './transports/webhook.js';
 import * as flow from './transports/flow.js';
 import { TERMINAL_STATUSES } from '../types.js';
-import type { EmitInput, Job, JobEvent } from '../types.js';
+import type { EmitInput, FlowStatus, Job, JobEvent } from '../types.js';
 
 const cfg = getConfig();
 
@@ -65,22 +65,43 @@ export async function emit(job: Job, input: EmitInput): Promise<JobEvent> {
     void withRetry('webhook', job.id, event.seq, () => webhook.send(event, job.notify.url));
   }
 
-  if (job.notify.kind === 'flow' && flow.flowEnabled() && flow.shouldComment(event, terminal)) {
-    void withRetry('flow', job.id, event.seq, async () => {
-      let postId = job.flowPostId;
-      if (!postId) {
-        postId = await flow.resolvePost(job);
-        if (postId) {
-          job.flowPostId = postId;
-          store.updateJob(job.id, { flowPostId: postId });
-        }
-      }
-      if (!postId) throw new Error('could not resolve a Flow post for this job');
-      await flow.comment(postId, text);
-    });
+  // A comment needs a thread, and the thread is created once, deliberately, in
+  // the `registering` stage. Anything emitted before that — the queue
+  // acknowledgement, triage starting — has nowhere to land yet and is carried
+  // by the log and SSE alone. That is the point: the Flow task is not opened
+  // until there is a summary worth putting in it.
+  if (
+    job.notify.kind === 'flow' &&
+    job.flowPostId &&
+    flow.flowEnabled() &&
+    flow.shouldComment(event, terminal)
+  ) {
+    const postId = job.flowPostId;
+    // `body` carries a whole document — a triage note, a root-cause report —
+    // and the rendered one-liner is its heading rather than a second comment.
+    const comment = input.body ? `${text}\n\n${redact(input.body)}` : text;
+    void withRetry('flow', job.id, event.seq, () => flow.comment(postId, comment, job));
   }
 
   return event;
+}
+
+/**
+ * Move the Flow task between columns, out of band of the event stream.
+ *
+ * Kept separate from `emit` because a status change is not a progress line: it
+ * happens at three points only (registered → in progress → done or feedback),
+ * and tying it to an event would move the card on every comment.
+ */
+export async function setFlowStatus(job: Job, status: FlowStatus): Promise<void> {
+  if (job.notify.kind !== 'flow' || !job.flowTaskId || !flow.flowEnabled()) return;
+  try {
+    await flow.updateStatus(job, status);
+    logger.info({ jobId: job.id, taskId: job.flowTaskId, status }, 'flow task status updated');
+  } catch (err) {
+    // A card left in the wrong column is worth a warning, never a failed job.
+    logger.warn({ jobId: job.id, status, err: String(err) }, 'could not update the Flow task status');
+  }
 }
 
 export function commentStages(): string[] {

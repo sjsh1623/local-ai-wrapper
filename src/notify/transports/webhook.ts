@@ -16,7 +16,7 @@ export async function send(event: JobEvent, url?: string | null): Promise<void> 
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (cfg.WEBHOOK_SECRET) {
     const sig = createHmac('sha256', cfg.WEBHOOK_SECRET).update(body).digest('hex');
-    headers['x-branchsmith-signature'] = `sha256=${sig}`;
+    headers['x-morningmate-alert-signature'] = `sha256=${sig}`;
   }
 
   const res = await fetch(target, { method: 'POST', headers, body });

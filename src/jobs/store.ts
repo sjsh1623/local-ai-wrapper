@@ -7,6 +7,8 @@ import type { Job, JobEvent, JobRequest, JobStatus, Stage } from '../types.js';
 const cfg = getConfig();
 mkdirSync(dirname(cfg.dbPath), { recursive: true });
 
+type Row = Record<string, any>;
+
 const db = new Database(cfg.dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -22,6 +24,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   instruction     TEXT NOT NULL,
   context         TEXT NOT NULL DEFAULT '{}',
   verify          TEXT NOT NULL DEFAULT '[]',
+  mcp             TEXT NOT NULL DEFAULT '[]',
   pr              TEXT NOT NULL DEFAULT '{}',
   notify          TEXT NOT NULL DEFAULT '{}',
   locale          TEXT NOT NULL DEFAULT 'ko',
@@ -31,7 +34,12 @@ CREATE TABLE IF NOT EXISTS jobs (
   started_at      TEXT,
   finished_at     TEXT,
   pr_url          TEXT,
+  flow_project_id TEXT,
+  flow_task_id    TEXT,
   flow_post_id    TEXT,
+  flow_url        TEXT,
+  summary         TEXT,
+  analysis        TEXT,
   files_changed   INTEGER NOT NULL DEFAULT 0,
   error           TEXT
 );
@@ -65,7 +73,28 @@ CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_ts    ON events(ts DESC);
 `);
 
-type Row = Record<string, any>;
+/**
+ * Columns added after the first release.
+ *
+ * `CREATE TABLE IF NOT EXISTS` above is a no-op on a database that already
+ * exists, so a deployment that has been running keeps the old five-column jobs
+ * table and every read of the new fields returns undefined. Adding them here
+ * is what lets the pinned `job-db` volume survive an upgrade — which matters,
+ * because that volume is the entire job history.
+ */
+for (const [column, ddl] of [
+  ['flow_project_id', 'flow_project_id TEXT'],
+  ['flow_task_id', 'flow_task_id TEXT'],
+  ['flow_url', 'flow_url TEXT'],
+  ['summary', 'summary TEXT'],
+  ['analysis', 'analysis TEXT'],
+  ["mcp", "mcp TEXT NOT NULL DEFAULT '[]'"],
+] as const) {
+  const present = (db.prepare('PRAGMA table_info(jobs)').all() as Row[]).some(
+    (c) => c.name === column,
+  );
+  if (!present) db.exec(`ALTER TABLE jobs ADD COLUMN ${ddl}`);
+}
 
 function toJob(r: Row): Job {
   return {
@@ -78,6 +107,9 @@ function toJob(r: Row): Job {
     instruction: r.instruction,
     context: JSON.parse(r.context),
     verify: JSON.parse(r.verify),
+    // Added after the first release: a row written before the column existed
+    // reads back as undefined, and every caller here expects an array.
+    mcp: JSON.parse(r.mcp ?? '[]'),
     pr: JSON.parse(r.pr),
     notify: JSON.parse(r.notify),
     locale: r.locale,
@@ -87,17 +119,22 @@ function toJob(r: Row): Job {
     startedAt: r.started_at,
     finishedAt: r.finished_at,
     prUrl: r.pr_url,
-    flowPostId: r.flow_post_id,
+    flowProjectId: r.flow_project_id ?? null,
+    flowTaskId: r.flow_task_id ?? null,
+    flowPostId: r.flow_post_id ?? null,
+    flowUrl: r.flow_url ?? null,
+    summary: r.summary ?? null,
+    analysis: r.analysis ?? null,
     filesChanged: r.files_changed,
     error: r.error,
   };
 }
 
 const insertJob = db.prepare(`
-  INSERT INTO jobs (id, status, stage, repo, base, branch, instruction, context, verify, pr,
-                    notify, locale, dry_run, idempotency_key, created_at)
-  VALUES (@id, 'queued', 'queued', @repo, @base, @branch, @instruction, @context, @verify, @pr,
-          @notify, @locale, @dry_run, @idempotency_key, @created_at)
+  INSERT INTO jobs (id, status, stage, repo, base, branch, instruction, context, verify, mcp,
+                    pr, notify, locale, dry_run, idempotency_key, created_at)
+  VALUES (@id, 'queued', 'queued', @repo, @base, @branch, @instruction, @context, @verify, @mcp,
+          @pr, @notify, @locale, @dry_run, @idempotency_key, @created_at)
 `);
 
 export function createJob(id: string, req: JobRequest): Job {
@@ -109,6 +146,7 @@ export function createJob(id: string, req: JobRequest): Job {
     instruction: req.instruction,
     context: JSON.stringify(req.context),
     verify: JSON.stringify(req.verify),
+    mcp: JSON.stringify(req.mcp ?? []),
     pr: JSON.stringify(req.pr),
     notify: JSON.stringify(req.notify),
     locale: req.locale,
@@ -151,7 +189,12 @@ const patchable: Record<string, string> = {
   startedAt: 'started_at',
   finishedAt: 'finished_at',
   prUrl: 'pr_url',
+  flowProjectId: 'flow_project_id',
+  flowTaskId: 'flow_task_id',
   flowPostId: 'flow_post_id',
+  flowUrl: 'flow_url',
+  summary: 'summary',
+  analysis: 'analysis',
   filesChanged: 'files_changed',
   error: 'error',
 };

@@ -11,6 +11,7 @@ import streamRoutes from './api/routes/stream.js';
 import healthRoutes from './api/routes/health.js';
 import consoleRoutes from './api/routes/console.js';
 import { authDisabled } from './api/auth.js';
+import { activeProvider } from './agent/index.js';
 
 const cfg = getConfig();
 
@@ -76,8 +77,9 @@ logger.info(
     port: cfg.PORT,
     locale: cfg.LOCALE,
     concurrency: cfg.JOB_CONCURRENCY,
-    model: cfg.CLAUDE_MODEL,
+    agent: activeProvider(),
+    model: activeProvider() === 'codex' ? cfg.CODEX_MODEL || '(codex default)' : cfg.CLAUDE_MODEL,
     allowedRepos: cfg.ALLOWED_REPOS,
   },
-  'branchsmith is listening',
+  'morningmate-alert is listening',
 );

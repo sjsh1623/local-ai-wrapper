@@ -18,6 +18,9 @@ const jobRequestSchema = z.object({
   instruction: z.string().min(3),
   context: z.record(z.string()).default({}),
   verify: z.array(z.string()).default([]),
+  // Extra MCP servers for this job, by the names in src/agent/mcp.ts. SigNoz is
+  // always offered; `["stripe"]` is what a billing job adds.
+  mcp: z.array(z.string()).default([]),
   pr: z
     .object({
       draft: z.boolean().default(true),
@@ -29,10 +32,24 @@ const jobRequestSchema = z.object({
   notify: z
     .object({
       kind: z.enum(['flow', 'webhook', 'none']).default('flow'),
+      projectId: z.string().nullable().default(null),
+      // Supply taskId and postId together to comment on an existing Flow task
+      // instead of registering a new one.
+      taskId: z.string().nullable().default(null),
       postId: z.string().nullable().default(null),
+      workers: z.array(z.string()).nullable().default(null),
+      webhook: z.string().nullable().default(null),
       url: z.string().nullable().default(null),
     })
-    .default({ kind: 'flow', postId: null, url: null }),
+    .default({
+      kind: 'flow',
+      projectId: null,
+      taskId: null,
+      postId: null,
+      workers: null,
+      webhook: null,
+      url: null,
+    }),
   locale: z.enum(['ko', 'en']).default(cfg.LOCALE),
   dryRun: z.boolean().default(false),
   idempotencyKey: z.string().nullable().default(null),

@@ -24,9 +24,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git ripgrep ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Claude Code runs from inside the container but signs in with the session
-# mounted from the host — see docker-compose.yml and README → Authentication.
-RUN npm install -g @anthropic-ai/claude-code && npm cache clean --force
+# Both agents run from inside the container but sign in with the session mounted
+# from the host — see docker-compose.yml and README → Authentication. Which one
+# actually runs is AGENT_PROVIDER; both are installed so switching is a restart,
+# not a rebuild.
+ARG CLAUDE_CODE_VERSION=latest
+ARG CODEX_VERSION=latest
+RUN npm install -g       @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}       @openai/codex@${CODEX_VERSION}     && npm cache clean --force
 
 # Matching the host uid keeps the mounted ~/.claude writable, which token
 # refresh depends on. Override with --build-arg on Linux hosts.
@@ -61,9 +65,10 @@ ENV NODE_ENV=production \
     PORT=8080 \
     WORKSPACE_DIR=/data/work \
     CACHE_DIR=/data/cache \
-    DB_PATH=/data/db/branchsmith.db \
+    DB_PATH=/data/db/morningmate-alert.db \
     ROUTES_FILE=/app/routes.yml \
-    CLAUDE_HOME=/home/app/.claude
+    CLAUDE_HOME=/home/app/.claude \
+    CODEX_HOME=/home/app/.codex
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \

@@ -70,6 +70,6 @@ export async function requireSignozBasic(
   }
   await reply
     .code(401)
-    .header('www-authenticate', 'Basic realm="branchsmith"')
+    .header('www-authenticate', 'Basic realm="morningmate-alert"')
     .send({ error: t(cfg.LOCALE, 'error.unauthorized') });
 }

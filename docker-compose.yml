@@ -1,23 +1,49 @@
+# The compose project name is pinned here on purpose. Left unset, Docker derives
+# it from the directory name, so moving or renaming this checkout would silently
+# create a second, empty set of volumes and lose the job history.
+name: issue-solver
+
 services:
-  branchsmith:
+  morningmate-alert:
     build:
       context: .
       args:
-        # On Linux, set these to your own id so the mounted ~/.claude stays
-        # writable:  APP_UID=$(id -u)  APP_GID=$(id -g)
+        # On Linux, set these to your own id so the mounted ~/.claude and ~/.codex
+        # stay writable:  APP_UID=$(id -u)  APP_GID=$(id -g)
         APP_UID: ${APP_UID:-1001}
         APP_GID: ${APP_GID:-1001}
-    image: branchsmith:local
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
+        CODEX_VERSION: ${CODEX_VERSION:-latest}
+    image: morningmate-alert:local
     # Local only. If SigNoz runs on another machine this is the one line to
     # revisit — and the moment to put a reverse proxy in front.
     ports:
       - "127.0.0.1:8080:8080"
     env_file: .env
+    # Codex's workspace-write sandbox is bubblewrap, and bwrap needs an
+    # unprivileged user namespace. Docker's default seccomp profile blocks the
+    # unshare(CLONE_NEWUSER) that requires, so every edit fails with
+    # "bwrap: No permissions to create a new namespace" — the agent reads the
+    # repository fine and then silently changes nothing, which reads as a model
+    # that chose not to act rather than a sandbox that could not start.
+    #
+    # Dropping seccomp is what lets bwrap run, and bwrap is then the thing that
+    # confines the agent to the worktree. The alternative — CODEX_SANDBOX=
+    # danger-full-access — keeps seccomp but removes that confinement entirely,
+    # putting the mounted ~/.codex and ~/.claude credentials within reach of
+    # model-generated commands. Confining the agent is worth more here than
+    # syscall filtering on a container that already drops every capability.
+    security_opt:
+      - seccomp=unconfined
     volumes:
       # Read-WRITE on purpose: a read-only mount stalls at the first token
       # refresh and the agent stops working with no obvious cause.
       - ${HOME}/.claude:/home/app/.claude
       - ${HOME}/.claude.json:/home/app/.claude.json
+      # Same bargain for Codex: `codex login` writes auth.json here and refreshes
+      # it in place. Create the directory on the host before the first `up`, or
+      # Docker creates it root-owned and the agent cannot write to it.
+      - ${HOME}/.codex:/home/app/.codex
       - repo-cache:/data/cache
       - job-db:/data/db
       - ./routes.yml:/app/routes.yml:ro
@@ -33,7 +59,7 @@ services:
     restart: unless-stopped
 
   # Gives the agent read access to the telemetry behind an alert. Deliberately
-  # publishes no port: only branchsmith needs it, over the compose network, and
+  # publishes no port: only morningmate-alert needs it, over the compose network, and
   # it holds a SigNoz admin credential that has no business being reachable from
   # the host. The official image runs HTTP mode only.
   #
@@ -46,6 +72,20 @@ services:
       SIGNOZ_URL: ${SIGNOZ_URL:-}
       SIGNOZ_API_KEY: ${SIGNOZ_API_KEY:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Load-bearing. The image DEFAULTS TO STDIO — verified against
+      # signoz/signoz-mcp-server main-88bde6f — so without this line the
+      # container reads an empty stdin, logs "server session ended" and exits 0.
+      # A clean exit code makes that look like a healthy one-shot job rather
+      # than a server that never came up, and morningmate-alert then reports
+      # `signozMcp: connection refused` for what looks like a running service.
+      TRANSPORT_MODE: http
+      # Defaults to localhost, which inside a container means nothing outside it
+      # can connect — including morningmate-alert on the compose network.
+      MCP_SERVER_HOST: 0.0.0.0
+      MCP_SERVER_PORT: "8080"
+    # The MCP endpoint is /mcp on that port, so SIGNOZ_MCP_URL is
+    # http://signoz-mcp:8080/mcp. The API key comes from the environment above,
+    # not from the client, which is why this port stays off the host.
     restart: unless-stopped
 
 volumes:
