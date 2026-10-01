@@ -331,6 +331,8 @@ docker compose --profile signoz up -d
 | `GET /v1/jobs/:id/log` | 전체 이벤트 + 전송 실패 기록 |
 | `GET /v1/stream` | 전체 작업 SSE · 최근 200건 리플레이 |
 | `POST /v1/jobs/:id/cancel` | 중단 및 작업 공간 정리 |
+| `GET /v1/qa` | QA 대기 목록 + 폴러 상태 (`state=open\|gone`) |
+| `POST /v1/qa/poll` | QA 프로젝트를 지금 다시 읽기 |
 | `GET /healthz` `GET /readyz` | 살아 있는지 / 실제로 작업을 끝낼 수 있는지 |
 | `GET /` | 진행 콘솔 |
 
@@ -531,6 +533,37 @@ Stripe 를 받지 않은 잡의 환경에서는 키를 지웁니다.
 
 ---
 
+## QA 대기 (선택)
+
+SigNoz 훅이 "알려 주면 받는" 입구라면, 이쪽은 **가서 읽어 오는** 입구입니다.
+`QA_ENABLED=true` 이면 QA 프로젝트를 5분마다 읽어, 수집 계정이 담당자인 업무를
+상태와 관계없이 콘솔의 **고객 QA** 보기에 올립니다. 프로젝트는 여러 개를 볼 수 있고,
+콘솔의 + 버튼으로 참여 중인 프로젝트 목록에서 고르거나 번호로 추가합니다.
+
+지금 단계는 읽기만 합니다. 잡을 만들지 않고, 에이전트를 돌리지 않고, QA 프로젝트에
+아무것도 쓰지 않습니다.
+
+수집 조건은 담당자 하나입니다: `QA_ASSIGNEE_IDS` 에 적힌 계정이 담당자인 업무.
+새 QA 업무의 기본 담당자가 수집 계정이라, 이 조건은 "아직 아무도 가져가지 않은 글"이라는
+뜻이 됩니다. 담당자를 사람으로 바꾸면 그 글은 다음 폴링에 **담당 해제**로 넘어갑니다 —
+사람과 겹치지 않게 하는 장치가 이것 하나입니다.
+
+폴링은 프로젝트당 목록 호출 한 번입니다. 본문·첨부·댓글은 콘솔에서 글을 열 때 읽어 오고,
+같은 글을 다시 누르면 새로 읽습니다 (API 한도가 분당 120회라 글마다 읽는 폴링은 쓰지 않습니다).
+
+상태는 거르지 않고 가져와서 콘솔에서 **대기 · 진행 · 완료 · 보류**로 나눕니다. 상태의
+이름과 ID 는 프로젝트마다 다르지만 상태 가족(category)은 같아서, 어느 프로젝트를 추가해도
+같은 네 칸으로 나뉩니다.
+
+글이 바뀌었는지는 상태 · 마지막 댓글 · 수정 시각으로 봅니다. 상태 변경과 담당자 변경도
+댓글을 남기므로, 아무도 글을 쓰지 않은 Re-request 도 새 판으로 잡힙니다.
+
+알럿 업무는 Flow 에, QA 프로젝트는 Morningmate 에 있어서 `FLOW_API_*` 와 키를 따로
+씁니다. 설정이 덜 채워져 있으면 서버는 그대로 뜨고 폴러만 꺼진 채, 무엇이 비었는지를
+`/readyz` 의 `qa` 와 콘솔에 적습니다.
+
+---
+
 ## 안전장치
 
 | | |
@@ -623,7 +656,8 @@ src/
   server.ts          Fastify 부트스트랩 · 라우트 등록 · 재시작 정합성 복구
   config.ts          env 스키마 검증(zod) — 작업 중이 아니라 시작 시점에 실패
   inbound/           signoz.ts (어댑터) · routes.ts (routes.yml)
-  api/               auth.ts · routes/{jobs,hooks,stream,health,console}.ts
+  api/               auth.ts · routes/{jobs,hooks,stream,health,console,qa}.ts
+  qa/                client.ts (읽기 API) · store.ts · poller.ts
   jobs/              store.ts (SQLite) · queue.ts · lifecycle.ts (11단계)
   workspace/         mirror.ts (베어 캐시) · worktree.ts
   agent/             claude.ts (헤드리스 실행) · stream.ts (NDJSON) · prompt.ts

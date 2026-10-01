@@ -221,6 +221,44 @@ const schema = z.object({
 
   WEBHOOK_URL: z.string().default(''),
   WEBHOOK_SECRET: z.string().default(''),
+
+  // ── QA intake ──────────────────────────────────────────────
+  // A second way in, next to the SigNoz hook: instead of waiting to be told,
+  // poll a QA project for tasks nobody has picked up yet. This stage only reads
+  // — it lists them on the console and starts no job.
+  //
+  // Off unless asked for, so an instance that exists to handle alerts keeps
+  // doing exactly that.
+  QA_ENABLED: bool(false),
+  // Its own base and key, not FLOW_API_*: alerts are filed in Flow, and the QA
+  // project lives in Morningmate. They are the same API on different hosts, and
+  // a key from one answers 401 on the other.
+  QA_API_BASE: z.string().default('https://api.morningmate.com'),
+  // A personal key (`/user/*` surface) belonging to a member of the QA project.
+  QA_API_KEY: z.string().default(''),
+  // Where a person opens the post. Not taken from the API: its `connectUrl`
+  // comes back as an internal load-balancer address nobody outside can follow.
+  QA_WEB_BASE: z.string().default('https://morningmate.com'),
+  // Projects are kept in the database and added from the console; this one is
+  // only a seed, so an instance configured before the picker existed starts
+  // with its project already on the list. Optional.
+  QA_PROJECT_ID: z.string().default(''),
+  // Only tasks assigned to one of these user ids are collected, in every
+  // status. The intake account is the default assignee of a new QA task, so
+  // this reads as "not yet claimed by a person" — reassigning a task takes it
+  // away from the poller. Empty refuses to poll rather than collecting the
+  // whole project.
+  QA_ASSIGNEE_IDS: csv(),
+  // The assignee column's id, for the server-side filter. 1 (the default
+  // WORKER_ID column) in every project seen so far.
+  QA_WORKER_COLUMN_ID: z.string().default('1'),
+  QA_POLL_INTERVAL_MS: int(300_000),
+  // Triage: the agent reads one post and says which lane it belongs in. Off,
+  // it runs only when somebody presses the button on the console; on, every
+  // new waiting post is triaged as it arrives. Start off — the verdicts need
+  // checking against real outcomes before they are worth putting on every post.
+  QA_TRIAGE_AUTO: bool(false),
+  QA_TRIAGE_TIMEOUT_MS: int(180_000),
 });
 
 export interface FlowWebhook {

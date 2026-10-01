@@ -7,6 +7,7 @@ import { checkToken } from '../../forge/github.js';
 import { flowEnabled, mode as flowMode } from '../../notify/transports/flow.js';
 import * as queue from '../../jobs/queue.js';
 import * as store from '../../jobs/store.js';
+import * as qaPoller from '../../qa/poller.js';
 
 const cfg = getConfig();
 
@@ -111,6 +112,17 @@ export default async function healthRoutes(app: FastifyInstance): Promise<void> 
       detail: stripe
         ? `${stripe.url} — offered to routes with \`mcp: [stripe]\``
         : 'not configured; billing alerts are diagnosed without Stripe (set STRIPE_MCP_KEY)',
+    };
+
+    // Reported, never failed on, for the same reason: QA intake is an extra,
+    // and an instance without it is a complete alert service.
+    const qa = qaPoller.status();
+    checks.qa = {
+      ok: true,
+      detail: qa.enabled
+        ? `polling ${Object.keys(qa.projects).length} project(s)` +
+          (qa.lastError ? ` — ${qa.lastError}` : '')
+        : `off — ${qa.reason}`,
     };
 
     const ok = Object.values(checks).every((c) => c.ok);

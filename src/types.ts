@@ -155,3 +155,118 @@ export interface EmitInput {
 export function displayContext(context: Record<string, string>): Array<[string, string]> {
   return Object.entries(context).filter(([key]) => !key.startsWith('_'));
 }
+
+/**
+ * One option of a project's status column.
+ *
+ * `category` is the family the option belongs to, and it is the same across
+ * projects even though the names and ids are not: "0" request, "1" in
+ * progress, "2" complete, "3" on hold. The console filters on it.
+ */
+export interface QaStatus {
+  id: string;
+  name: string;
+  category: string;
+}
+
+/** A QA project the intake polls. */
+export interface QaProject {
+  projectId: string;
+  title: string;
+  statuses: QaStatus[];
+  addedAt: string;
+}
+
+/**
+ * Where a QA post goes after triage.
+ *
+ *   A1 — layout only (SCSS): fixable end to end
+ *   A2 — wording / hard-coded text → i18n key: code fix plus a key list for a person
+ *   B  — logic bug with a clear reproduction: analysis and a draft fix
+ *   C  — one customer's account or data: investigation report only
+ *   D  — a question, a request, another team's area, mobile: a person decides
+ */
+export const QA_LANES = ['A1', 'A2', 'B', 'C', 'D'] as const;
+export type QaLane = (typeof QA_LANES)[number];
+
+export interface QaTriage {
+  lane: QaLane;
+  confidence: 'high' | 'medium' | 'low';
+  /** One line, in the reader's language, saying what the post is about. */
+  summary: string;
+  /** Why this lane — the facts in the post that decided it. */
+  reasons: string[];
+  /** What a fix would need that the post does not give. */
+  missing: string[];
+  at: string;
+  /** The row version the verdict was made on; a changed post gets a new one. */
+  version: string;
+  provider: string;
+  elapsedMs: number;
+}
+
+/** One comment on a QA post, as the comments endpoint returns it. */
+export interface QaComment {
+  id: string;
+  authorId: string;
+  authorName: string;
+  /** Flow's own `yyyyMMddHHmmss`, kept as it arrived — the API does not say which zone. */
+  at: string;
+  text: string;
+  /** Status and assignee changes are comments too; this tells them apart from a person's. */
+  system: boolean;
+  images: string[];
+}
+
+/**
+ * A QA task waiting in the intake queue.
+ *
+ * This is deliberately not a `Job`. A job is work this service has agreed to
+ * do; a QA item is something it has only read. Nothing here is acted on until a
+ * later stage turns one into a `JobRequest`.
+ */
+export interface QaItem {
+  postId: string;
+  taskId: string;
+  projectId: string;
+  title: string;
+  body: string;
+  url: string;
+  section: string | null;
+  statusId: string;
+  statusName: string;
+  /** See QaStatus.category. */
+  statusCategory: string;
+  assignees: Array<{ id: string; name: string }>;
+  /** Custom column values by column name — Issue Type, Reproducibility, Region… */
+  columns: Record<string, string[]>;
+  registerName: string;
+  registeredAt: string;
+  images: string[];
+  attachments: Array<{ name: string; size: number | null }>;
+  /** A recording is evidence the agent cannot open; triage needs to know it exists. */
+  hasVideo: boolean;
+  /**
+   * Read on demand, when someone opens the post on the console — not by the
+   * poller: the body, attachments and comments. `detailAt` is when, and
+   * `detailVersion` the row version they belong to, so a post edited since is
+   * read again on the next open.
+   */
+  comments: QaComment[];
+  detailAt: string | null;
+  detailVersion: string | null;
+  /** The agent's verdict, or null until one is asked for. */
+  triage: QaTriage | null;
+  /** Why the last attempt produced no verdict. */
+  triageError: string | null;
+  /**
+   * Changes whenever the task row does — a status move, an edit. What makes a
+   * Re-request a new piece of work rather than one already seen.
+   */
+  version: string;
+  /** `gone` once it is no longer assigned to the intake account. */
+  state: 'open' | 'gone';
+  firstSeenAt: string;
+  updatedAt: string;
+  lastSeenAt: string;
+}

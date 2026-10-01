@@ -26,6 +26,17 @@ export function redactString(input: string): string {
   return out;
 }
 
+/**
+ * Customer identities, as opposed to secrets.
+ *
+ * A QA post names the customer account it is about, and that address must not
+ * travel into an agent prompt or a log line. Not part of `redact` above: the
+ * console still shows the address to the person handling the post.
+ */
+export function maskEmails(input: string): string {
+  return input.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '<이메일>');
+}
+
 export function redact<T>(value: T, depth = 0): T {
   if (depth > 8) return value;
   if (typeof value === 'string') return redactString(value) as unknown as T;

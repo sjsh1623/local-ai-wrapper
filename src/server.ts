@@ -10,6 +10,8 @@ import hookRoutes from './api/routes/hooks.js';
 import streamRoutes from './api/routes/stream.js';
 import healthRoutes from './api/routes/health.js';
 import consoleRoutes from './api/routes/console.js';
+import qaRoutes from './api/routes/qa.js';
+import * as qaPoller from './qa/poller.js';
 import { authDisabled } from './api/auth.js';
 import { activeProvider } from './agent/index.js';
 
@@ -43,6 +45,7 @@ await app.register(hookRoutes);
 // hook they add cannot leak onto the console or the SigNoz hook.
 await app.register(async (scope) => { await scope.register(jobRoutes); });
 await app.register(async (scope) => { await scope.register(streamRoutes); });
+await app.register(async (scope) => { await scope.register(qaRoutes); });
 
 if (authDisabled) {
   logger.warn(
@@ -62,6 +65,7 @@ if (resumed > 0) logger.info({ count: resumed }, 'requeued jobs left over from a
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'shutting down');
+  qaPoller.stop();
   await queue.shutdown();
   await app.close();
   process.exit(0);
@@ -83,3 +87,6 @@ logger.info(
   },
   'morningmate-alert is listening',
 );
+
+// After listen, so a slow or failing first poll can never hold the port closed.
+qaPoller.start();

@@ -45,7 +45,7 @@ const cfg = getConfig();
  */
 
 /** Flow's envelope: `success` is authoritative, not the HTTP status alone. */
-interface FlowEnvelope<T = any> {
+export interface FlowEnvelope<T = any> {
   success?: boolean;
   code?: number;
   message?: string;
@@ -128,12 +128,29 @@ function url(pathTemplate: string, vars: Record<string, string>): string {
   return cfg.FLOW_API_BASE.replace(/\/+$/, '') + path;
 }
 
-async function call<T>(method: string, target: string, body?: unknown): Promise<FlowEnvelope<T>> {
+function call<T>(method: string, target: string, body?: unknown): Promise<FlowEnvelope<T>> {
+  return request<T>(cfg.FLOW_API_KEY, method, target, body);
+}
+
+/**
+ * One authenticated call, for any key.
+ *
+ * Exported for the QA intake, which reads a project on a different host with a
+ * different key but gets the same envelope back — and the two traps handled
+ * below (the `response` wrapper, `success: false` on a 200) are exactly the
+ * ones worth not rediscovering there.
+ */
+export async function request<T>(
+  apiKey: string,
+  method: string,
+  target: string,
+  body?: unknown,
+): Promise<FlowEnvelope<T>> {
   const res = await fetch(target, {
     method,
     headers: {
       'content-type': 'application/json',
-      'x-flow-api-key': cfg.FLOW_API_KEY,
+      'x-flow-api-key': apiKey,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
     // Flow occasionally takes its time on task creation; a hung fetch would

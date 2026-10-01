@@ -301,6 +301,8 @@ takes Basic Auth.
 | `GET /v1/jobs/:id/log` | Every event, plus failed notification deliveries |
 | `GET /v1/stream` | SSE across all jobs; replays the last 200 events |
 | `POST /v1/jobs/:id/cancel` | Abort and clean up |
+| `GET /v1/qa` | QA intake list + poller status (`state=open\|gone`) |
+| `POST /v1/qa/poll` | Re-read the QA project now |
 | `GET /healthz` `GET /readyz` | Liveness / full readiness |
 | `GET /` | The live console |
 
@@ -513,6 +515,42 @@ The only write it can perform is **cancel**.
 
 ---
 
+## QA intake (optional)
+
+The SigNoz hook is the door that waits to be told; this is the one that goes and
+looks. With `QA_ENABLED=true` the service reads QA projects every five minutes and
+lists the tasks assigned to the intake account, in every status, under
+**Customer QA** on the console. Several projects can be watched; the console's
++ button adds one from the projects the key takes part in, or by number.
+
+This stage only reads. It creates no job, runs no agent, and writes nothing to
+the QA project.
+
+One condition selects a task: it is assigned to an account in
+`QA_ASSIGNEE_IDS`. The intake account is the default assignee of a new QA task,
+so this reads as "not yet claimed by a person". Reassigning a task to someone
+moves it to **Left** on the next poll — that one field is what keeps the service
+and a person from working the same task.
+
+A poll is one list call per project. The body, attachments and comments are
+read when a post is opened on the console, and again when it is clicked again
+(the API allows 120 calls a minute, so a poll that reads every post is out).
+
+Statuses are not filtered; the console splits them into **waiting · in
+progress · done · on hold**. Names and ids differ per project but the status
+family does not, so every added project lands in the same four buckets.
+
+A post counts as changed when its status, its last comment or its edit time
+moves. Status and assignee changes leave a comment behind, so a Re-request
+nobody wrote anything on is still picked up as a new version.
+
+Alerts are filed in Flow and the QA project lives in Morningmate, so this uses
+its own key rather than `FLOW_API_*`. A half-filled configuration does not stop
+the server: the poller stays off and says what is missing in `/readyz` (`qa`)
+and on the console.
+
+---
+
 ## Guardrails
 
 | | |
@@ -605,7 +643,8 @@ src/
   server.ts          Fastify bootstrap, route registration, restart reconciliation
   config.ts          env schema (zod) — fails at boot, not mid-job
   inbound/           signoz.ts (adapter) · routes.ts (routes.yml)
-  api/               auth.ts · routes/{jobs,hooks,stream,health,console}.ts
+  api/               auth.ts · routes/{jobs,hooks,stream,health,console,qa}.ts
+  qa/                client.ts (read API) · store.ts · poller.ts
   jobs/              store.ts (SQLite) · queue.ts · lifecycle.ts (the eleven stages)
   workspace/         mirror.ts (bare cache, REPOS_DIR aware) · worktree.ts
   agent/             claude.ts (headless spawn) · stream.ts (NDJSON) · prompt.ts
