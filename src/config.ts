@@ -259,6 +259,9 @@ const schema = z.object({
   // checking against real outcomes before they are worth putting on every post.
   QA_TRIAGE_AUTO: bool(false),
   QA_TRIAGE_TIMEOUT_MS: int(180_000),
+  // The rules the agent triages by, as a file next to routes.yml. Read on
+  // every verdict, so editing it needs no build and no restart.
+  QA_TRIAGE_PROMPT_FILE: z.string().default('./qa-triage-prompt.md'),
 });
 
 export interface FlowWebhook {
@@ -273,6 +276,7 @@ export type Config = z.infer<typeof schema> & {
   reposDir: string;
   dbPath: string;
   routesFile: string;
+  qaTriagePromptFile: string;
   /** Named Flow webhook endpoints, keyed by lower-case name. See below. */
   flowWebhooks: Record<string, FlowWebhook>;
   /** Resolved from FLOW_API_SURFACE unless explicitly overridden. */
@@ -349,6 +353,7 @@ function build(): Config {
     reposDir: resolve(c.REPOS_DIR),
     dbPath: resolve(c.DB_PATH),
     routesFile: resolve(c.ROUTES_FILE),
+    qaTriagePromptFile: resolve(c.QA_TRIAGE_PROMPT_FILE),
     flowWebhooks: flowWebhooksFrom(process.env),
     flowTaskCreatePath:
       c.FLOW_TASK_CREATE_PATH || `/${c.FLOW_API_SURFACE}/posts/projects/{projectId}/tasks`,

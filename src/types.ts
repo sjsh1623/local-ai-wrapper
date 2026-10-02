@@ -205,6 +205,22 @@ export interface QaTriage {
   elapsedMs: number;
 }
 
+/**
+ * A person's verdict on a post, next to the agent's.
+ *
+ * Kept separately rather than overwriting: the pair is the data — where the
+ * agent and a person disagree is what the triage rules get corrected from.
+ */
+export interface QaReview {
+  lane: QaLane;
+  /** The agent's lane at the time, so agreement can be counted later. */
+  agentLane: QaLane | null;
+  note: string;
+  by: string;
+  at: string;
+  version: string;
+}
+
 /** One comment on a QA post, as the comments endpoint returns it. */
 export interface QaComment {
   id: string;
@@ -259,6 +275,8 @@ export interface QaItem {
   triage: QaTriage | null;
   /** Why the last attempt produced no verdict. */
   triageError: string | null;
+  /** What a person said the lane is, or null. */
+  review: QaReview | null;
   /**
    * Changes whenever the task row does — a status move, an edit. What makes a
    * Re-request a new piece of work rather than one already seen.

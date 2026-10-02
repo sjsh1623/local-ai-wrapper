@@ -47,6 +47,7 @@ services:
       - repo-cache:/data/cache
       - job-db:/data/db
       - ./routes.yml:/app/routes.yml:ro
+      - ./qa-triage-prompt.md:/app/qa-triage-prompt.md:ro
       # Read-only on purpose: git only ever reads from here, and a manually
       # curated checkout should not be something a job can damage.
       - ./repo:/data/repo:ro

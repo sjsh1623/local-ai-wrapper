@@ -465,6 +465,26 @@
   .verdict ul{margin:4px 0 0;padding-left:18px;color:var(--label-2)}
   .verdict li{margin:2px 0}
   .verdict .vt{font-size:11.5px;font-weight:600;color:var(--label-3);margin-top:8px}
+  /* 사람 판정. 에이전트 판정 아래 한 줄: 맞음 / 다른 레인 / 메모 */
+  .review{margin-top:10px;padding-top:10px;border-top:1px solid var(--sep)}
+  .review .rq{font-size:12.5px;font-weight:600;color:var(--label-2);margin-bottom:6px}
+  .review .rrow{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+  .review .rrow button{font-family:inherit;font-size:12px;font-weight:600;border:0;border-radius:7px;
+    padding:4px 10px;cursor:pointer;background:var(--fill);color:var(--label-2)}
+  .review .rrow button:hover{background:var(--fill-2);color:var(--label)}
+  .review .rrow button.ok{background:var(--green-tint);color:var(--green)}
+  .review .rrow button.on{background:var(--blue-tint);color:var(--blue)}
+  .review .rrow button[disabled]{opacity:.5;cursor:default}
+  .review input{font-family:inherit;font-size:12.5px;color:var(--label);background:var(--fill-2);
+    border:0;border-radius:7px;padding:5px 9px;min-width:0}
+  .review input.note{flex:1 1 220px}
+  .review input.by{width:110px}
+  .review input:focus{outline:2px solid var(--focus);outline-offset:1px}
+  .review .rdone{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--label)}
+  .review .rdone .rm{font-size:11.5px;color:var(--label-3);margin-left:auto;font-family:var(--mono)}
+  .review .rdone .clear{font-family:inherit;font-size:11.5px;border:0;background:transparent;
+    color:var(--label-3);cursor:pointer;text-decoration:underline}
+  .lane.human{box-shadow:inset 0 0 0 1.5px currentColor}
   .row .tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
   .row .tags span{font-size:11px;color:var(--label-2);background:var(--fill-2);
                   border-radius:5px;padding:1px 6px}

@@ -4,7 +4,8 @@ import * as client from '../../qa/client.js';
 import * as poller from '../../qa/poller.js';
 import * as store from '../../qa/store.js';
 import * as triage from '../../qa/triage.js';
-import type { QaItem } from '../../types.js';
+import { QA_LANES } from '../../types.js';
+import type { QaItem, QaLane } from '../../types.js';
 
 const PROJECT_ID = /^\d{1,15}$/;
 
@@ -100,6 +101,37 @@ export default async function qaRoutes(app: FastifyInstance): Promise<void> {
     if (!poller.status().enabled) return reply.code(409).send({ poller: poller.status() });
     if (!store.getItem(postId)) return reply.code(404).send({ error: 'no such post' });
     return reply.code(202).send({ queued: triage.enqueue(postId), triage: triage.status() });
+  });
+
+  // A person's lane for a post. Stored beside the agent's verdict, never over
+  // it: the pair is what the triage rules are corrected from.
+  app.put('/v1/qa/items/:postId/review', async (req, reply) => {
+    const { postId } = req.params as { postId: string };
+    if (!PROJECT_ID.test(postId)) return reply.code(400).send({ error: 'postId must be a number' });
+    const body = (req.body ?? {}) as { lane?: unknown; note?: unknown; by?: unknown };
+    const lane = String(body.lane ?? '').toUpperCase();
+    if (!(QA_LANES as readonly string[]).includes(lane)) {
+      return reply.code(400).send({ error: `lane must be one of ${QA_LANES.join(', ')}` });
+    }
+    const item = store.getItem(postId);
+    if (!item) return reply.code(404).send({ error: 'no such post' });
+    const saved = store.saveReview(postId, {
+      lane: lane as QaLane,
+      agentLane: item.triage?.lane ?? null,
+      note: typeof body.note === 'string' ? body.note.trim().slice(0, 500) : '',
+      by: typeof body.by === 'string' ? body.by.trim().slice(0, 60) : '',
+      at: new Date().toISOString(),
+      version: item.version,
+    });
+    return reply.send({ item: saved });
+  });
+
+  app.delete('/v1/qa/items/:postId/review', async (req, reply) => {
+    const { postId } = req.params as { postId: string };
+    if (!PROJECT_ID.test(postId)) return reply.code(400).send({ error: 'postId must be a number' });
+    const item = store.saveReview(postId, null);
+    if (!item) return reply.code(404).send({ error: 'no such post' });
+    return reply.send({ item });
   });
 
   app.delete('/v1/qa/projects/:id', async (req, reply) => {

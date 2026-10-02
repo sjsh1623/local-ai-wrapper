@@ -56,6 +56,7 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY routes.yml ./routes.yml
+COPY qa-triage-prompt.md ./qa-triage-prompt.md
 
 RUN mkdir -p /data/work /data/cache /data/db && chown -R ${APP_UID}:${APP_GID} /data /app
 
@@ -67,6 +68,7 @@ ENV NODE_ENV=production \
     CACHE_DIR=/data/cache \
     DB_PATH=/data/db/morningmate-alert.db \
     ROUTES_FILE=/app/routes.yml \
+    QA_TRIAGE_PROMPT_FILE=/app/qa-triage-prompt.md \
     CLAUDE_HOME=/home/app/.claude \
     CODEX_HOME=/home/app/.codex
 

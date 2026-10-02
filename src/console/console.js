@@ -44,12 +44,70 @@
     return null;
   }
   function laneBadge(item) {
+    var r = item.review;
+    if (r) {
+      return '<span class="lane human ' + esc(r.lane) + '" title="' +
+        esc((L === 'ko' ? '사람 판정 ' : 'reviewed: ') + t(LANE[r.lane]) + (r.by ? ' · ' + r.by : '') +
+            (r.agentLane && r.agentLane !== r.lane ? (L === 'ko' ? ' · 에이전트는 ' : ' · agent said ') + r.agentLane : '')) +
+        '">' + esc(r.lane) + '</span>';
+    }
     var v = item.triage;
     if (!v) return '';
     var stale = v.version !== item.version;
     return '<span class="lane ' + esc(v.lane) + (v.confidence === 'low' ? ' low' : '') + (stale ? ' stale' : '') +
       '" title="' + esc(t(LANE[v.lane]) + ' · ' + t(CONF[v.confidence]) + (stale ? (L === 'ko' ? ' · 글이 바뀐 뒤의 판정 아님' : ' · made before the post changed') : '')) +
       '">' + esc(v.lane) + '</span>';
+  }
+
+  /* 사람 판정 한 줄. 저장된 게 있으면 결과와 "지우기", 없으면 맞음/레인 버튼과 메모 칸. */
+  function reviewRow(item) {
+    var r = item.review;
+    var html = '<div class="review">';
+    if (r) {
+      html += '<div class="rdone">' + laneBadge(item) + '<b>' + esc(t(LANE[r.lane])) + '</b>' +
+        (r.agentLane ? '<span class="pill ' + (r.agentLane === r.lane ? 'c2' : 'c0') + '">' +
+          (r.agentLane === r.lane ? (L === 'ko' ? '에이전트와 일치' : 'agrees with agent')
+                                  : (L === 'ko' ? '에이전트는 ' + r.agentLane : 'agent said ' + r.agentLane)) + '</span>' : '') +
+        (r.note ? '<span>' + esc(r.note) + '</span>' : '') +
+        '<span class="rm">' + esc(r.by || '—') + ' · ' + clock(r.at) + '</span>' +
+        '<button type="button" class="clear" data-clear="' + esc(item.postId) + '">' + (L === 'ko' ? '지우기' : 'clear') + '</button>' +
+        '</div>';
+    } else {
+      var agent = item.triage ? item.triage.lane : null;
+      html += '<div class="rq">' + (agent
+        ? (L === 'ko' ? '이 판정이 맞나요?' : 'Is this right?')
+        : (L === 'ko' ? '사람이 레인을 지정' : 'Set the lane yourself')) + '</div>' +
+        '<div class="rrow">' +
+        (agent ? '<button type="button" class="ok" data-lane="' + esc(agent) + '">' + (L === 'ko' ? '맞음 (' + agent + ')' : 'Yes (' + agent + ')') + '</button>' : '') +
+        ['A1', 'A2', 'B', 'C', 'D'].filter(function (l) { return l !== agent; }).map(function (l) {
+          return '<button type="button" data-lane="' + l + '" title="' + esc(t(LANE[l])) + '">' + l + '</button>';
+        }).join('') +
+        '<input class="note" id="rv-note" placeholder="' + (L === 'ko' ? '이유 (선택)' : 'why (optional)') + '">' +
+        '<input class="by" id="rv-by" placeholder="' + (L === 'ko' ? '이름' : 'name') + '" value="' + esc(reviewerName()) + '">' +
+        '</div>';
+    }
+    return html + '</div>';
+  }
+  function reviewerName() {
+    try { return localStorage.getItem('morningmate-alert-reviewer') || ''; } catch (e) { return ''; }
+  }
+  function sendReview(postId, lane) {
+    var note = (document.getElementById('rv-note') || {}).value || '';
+    var by = (document.getElementById('rv-by') || {}).value || '';
+    try { localStorage.setItem('morningmate-alert-reviewer', by); } catch (e) {}
+    api('/v1/qa/items/' + encodeURIComponent(postId) + '/review', {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ lane: lane, note: note, by: by })
+    }).then(applyItem).catch(function () {});
+  }
+  function clearReview(postId) {
+    api('/v1/qa/items/' + encodeURIComponent(postId) + '/review', { method: 'DELETE' })
+      .then(applyItem).catch(function () {});
+  }
+  function applyItem(d) {
+    var i = qa.items.findIndex(function (x) { return x.postId === d.item.postId; });
+    if (i >= 0) qa.items[i] = d.item;
+    renderRows(); renderQaThread();
   }
 
   /* Must stay in the same order as STAGES in src/types.ts — the progress bar
@@ -753,7 +811,8 @@
     // 30초마다 목록을 다시 받아오지만, 같은 글의 같은 판이면 본문을 다시 그리지
     // 않는다 — 읽고 있던 스크롤 위치가 매번 맨 위로 돌아가기 때문이다.
     var key = [item.postId, item.version, item.detailAt, detailLoading === item.postId,
-               triageState(item), item.triage && item.triage.at, item.triageError, L].join('|');
+               triageState(item), item.triage && item.triage.at, item.triageError,
+               item.review && item.review.at, L].join('|');
     if (qaShown === key) return;
     qaShown = key;
 
@@ -770,11 +829,15 @@
 
     // 분류 결과. 판정은 글 바로 아래, 댓글보다 앞에 — 읽는 사람이 먼저 보는 것이 결론이다.
     var ts = triageState(item);
-    if (ts || item.triage || item.triageError) {
+    if (item.detailAt) {
       var v = item.triage;
       var stale = v && v.version !== item.version;
       html += '<div class="msg result"><div class="t"></div><div class="c"><div class="who">' +
         (L === 'ko' ? '분류' : 'Triage') + '</div><div class="verdict">';
+      if (!ts && !v && !item.triageError) {
+        html += '<div class="vh"><b>' + (L === 'ko' ? '아직 분류하지 않았습니다' : 'Not triaged yet') + '</b>' +
+          '<span class="vm">' + (L === 'ko' ? '위의 "분류하기"로 에이전트 판정을 받거나, 아래에서 직접 지정' : 'press "Triage" above, or set the lane below') + '</span></div>';
+      }
       if (ts) {
         html += '<div class="vh"><b>' + (ts === 'running'
           ? (L === 'ko' ? '에이전트가 읽는 중…' : 'The agent is reading…')
@@ -792,6 +855,7 @@
       if (item.triageError && !ts) {
         html += '<div class="vt" style="color:var(--red)">' + (L === 'ko' ? '마지막 시도 실패: ' : 'Last attempt failed: ') + esc(item.triageError) + '</div>';
       }
+      html += reviewRow(item);
       html += '</div></div></div>';
     }
 
@@ -813,6 +877,12 @@
     });
 
     document.getElementById('t-msgs').innerHTML = html;
+    document.querySelectorAll('#t-msgs .review button[data-lane]').forEach(function (b) {
+      b.addEventListener('click', function () { sendReview(item.postId, b.dataset.lane); });
+    });
+    document.querySelectorAll('#t-msgs .review button[data-clear]').forEach(function (b) {
+      b.addEventListener('click', function () { clearReview(b.dataset.clear); });
+    });
     document.querySelectorAll('#t-msgs a.shot').forEach(function (a) {
       a.addEventListener('click', function (ev) {
         ev.preventDefault();

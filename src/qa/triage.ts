@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getConfig } from '../config.js';
@@ -101,7 +101,7 @@ async function triageOne(postId: string): Promise<void> {
   try {
     const run = await runAgent({
       cwd: scratch,
-      prompt: prompt(item),
+      prompt: await prompt(item, await rules()),
       readOnly: true,
       timeoutMs: cfg.QA_TRIAGE_TIMEOUT_MS,
       mcp: [],
@@ -170,7 +170,23 @@ function parse(text: string): Omit<QaTriage, 'at' | 'version' | 'provider' | 'el
 
 const CATEGORY: Record<string, string> = { '0': '대기', '1': '진행', '2': '완료', '3': '보류' };
 
-function prompt(item: QaItem): string {
+/**
+ * The rules half of the prompt, from a file next to routes.yml.
+ *
+ * Read on every run rather than once at boot: the whole point of the file is
+ * that a rule can be changed between two verdicts without a build or a
+ * restart. A missing file is an error on the verdict, not at boot — the alert
+ * side of this service does not depend on it.
+ */
+async function rules(): Promise<string> {
+  const text = await readFile(cfg.qaTriagePromptFile, 'utf8');
+  // The HTML comment at the top is for the person editing the file.
+  const body = text.replace(/^\s*<!--[\s\S]*?-->\s*/, '').trim();
+  if (body.length < 100) throw new Error(`${cfg.qaTriagePromptFile} is empty`);
+  return body;
+}
+
+async function prompt(item: QaItem, rules: string): Promise<string> {
   const columns = Object.entries(item.columns)
     .map(([k, v]) => `- ${k}: ${v.join(', ')}`)
     .join('\n');
@@ -191,38 +207,7 @@ function prompt(item: QaItem): string {
     .join('\n');
 
   return [
-    '당신은 Morningmate(협업 SaaS) 개발팀의 QA 분류 담당입니다. 아래 QA 글 하나를 읽고,',
-    '코딩 에이전트가 **flow-was 저장소(Java 1.8 + JSP + Preact 모놀리스)** 를 자동으로 고칠 수 있는 글인지 판정하세요.',
-    '코드는 볼 수 없고 글만 봅니다. 추측하지 말고, 글에 적힌 사실만 근거로 쓰세요.',
-    '',
-    '## 레인 (하나만 고름)',
-    '- A1: 레이아웃만의 문제 — 줄바꿈, 잘림, 겹침, 간격. SCSS만 고치면 끝남.',
-    '- A2: 문구·언어 문제 — 한국어가 그대로 노출, 번역 누락, 하드코딩된 문자열. 코드에서 다국어 키로 바꾸는 수정.',
-    '- B: 동작(로직) 버그 — 재현 경로가 명확하고 누구나 재현됨. 원인 분석과 수정 초안이 가능.',
-    '- C: 특정 고객 계정·데이터·환경에서만 나는 문제 — 코드만으로는 재현도 확인도 어려움. 조사 리포트만.',
-    '- D: 버그가 아님 — 확인 요청, 개선 제안, 기획 질문, 모바일 앱·위키·결제 등 다른 저장소 소관, 정보가 너무 없음.',
-    '',
-    '## 판정에 쓸 신호',
-    '- 재현 경로가 적혀 있는가, "항상" 재현인가(Reproducibility 컬럼), 특정 계정이 언급되는가',
-    '- 화면 단서가 있는가: 화면 문구, 메뉴 경로, 스크린샷. 영상만 있으면 에이전트는 볼 수 없음',
-    '- Issue Type 컬럼: UI/UX·Language 는 A 쪽, Data 는 C 쪽 힌트. 단 컬럼은 등록자가 고른 것이라 본문이 우선',
-    '- 제목의 머리표: [확인요청] [개선] 은 D, [고객오류] 는 C 가능성, 모바일/iOS/AOS/위키 는 D',
-    '- 댓글에서 이미 원인이나 조치가 언급됐는가, Re-request 인가',
-    '',
-    '## 확신도',
-    '- high: 레인이 명확하고 수정에 필요한 정보가 다 있음',
-    '- medium: 레인은 맞아 보이나 빠진 정보가 있음',
-    '- low: 글만으로는 판단이 어려움 (이 경우 보통 D 또는 C)',
-    '',
-    '## 출력',
-    '아래 형식의 JSON 하나만 출력하세요. 앞뒤 설명, 코드 펜스 없이. 모든 문장은 한국어로.',
-    '{',
-    '  "lane": "A1|A2|B|C|D",',
-    '  "confidence": "high|medium|low",',
-    '  "summary": "이 글이 무엇에 대한 것인지 한 줄",',
-    '  "reasons": ["이 레인으로 판정한 근거 — 글에 적힌 사실", "..."],',
-    '  "missing": ["수정하려면 더 필요한 것. 없으면 빈 배열", "..."]',
-    '}',
+    rules,
     '',
     '---',
     '',

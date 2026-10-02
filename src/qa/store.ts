@@ -1,5 +1,5 @@
 import { db } from '../jobs/store.js';
-import type { QaComment, QaItem, QaProject, QaTriage } from '../types.js';
+import type { QaComment, QaItem, QaProject, QaReview, QaTriage } from '../types.js';
 import type { Detail, RowItem } from './client.js';
 
 type Row = Record<string, any>;
@@ -126,6 +126,7 @@ type Stored = RowItem & Partial<Detail> & {
   detailVersion?: string | null;
   triage?: QaTriage | null;
   triageError?: string | null;
+  review?: QaReview | null;
 };
 
 function toItem(r: Row): QaItem {
@@ -142,6 +143,7 @@ function toItem(r: Row): QaItem {
     detailVersion: doc.detailVersion ?? null,
     triage: doc.triage ?? null,
     triageError: doc.triageError ?? null,
+    review: doc.review ?? null,
     state: r.state,
     firstSeenAt: r.first_seen_at,
     updatedAt: r.updated_at,
@@ -252,6 +254,15 @@ export function saveTriage(postId: string, triage: QaTriage | null, error: strin
   const kept = JSON.parse(row.data) as Stored;
   // A failed attempt keeps the previous verdict: stale beats blank.
   const data: Stored = { ...kept, triage: triage ?? kept.triage ?? null, triageError: error };
+  db.prepare('UPDATE qa_items SET data = ? WHERE post_id = ?').run(JSON.stringify(data), postId);
+  return getItem(postId);
+}
+
+/** Record, or clear, a person's lane. */
+export function saveReview(postId: string, review: QaReview | null): QaItem | null {
+  const row = db.prepare('SELECT data FROM qa_items WHERE post_id = ?').get(postId) as Row | undefined;
+  if (!row) return null;
+  const data: Stored = { ...(JSON.parse(row.data) as Stored), review };
   db.prepare('UPDATE qa_items SET data = ? WHERE post_id = ?').run(JSON.stringify(data), postId);
   return getItem(postId);
 }

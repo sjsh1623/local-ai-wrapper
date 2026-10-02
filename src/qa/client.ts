@@ -395,7 +395,7 @@ function bodyOf(post: RawPost): string {
 export type RowItem = Omit<
   QaItem,
   | 'state' | 'firstSeenAt' | 'updatedAt' | 'lastSeenAt'
-  | 'comments' | 'detailAt' | 'detailVersion' | 'triage' | 'triageError'
+  | 'comments' | 'detailAt' | 'detailVersion' | 'triage' | 'triageError' | 'review'
   | 'body' | 'section' | 'images' | 'attachments' | 'hasVideo'
 >;
 
